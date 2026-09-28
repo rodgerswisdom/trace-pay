@@ -1,0 +1,1 @@
+ALTER TABLE `deals` ADD `buyer_phone` text;
