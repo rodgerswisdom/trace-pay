@@ -1,0 +1,10 @@
+# Never upload local secrets or local data; Vercel gets its settings from Environment Variables.
+.env
+.env.*
+!.env.example
+.pgdata
+storage
+local.db
+local.db-*
+node_modules
+.next

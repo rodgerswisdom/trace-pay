@@ -1,12 +1,11 @@
 import "dotenv/config";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
-import path from "node:path";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db, type Tx } from "../src/db";
-import { claims, deals, events, exporters, payments, proofItems, readings, transitLogs } from "../src/db/schema";
+import { claims, deals, events, exporters, files, payments, proofItems, readings, transitLogs } from "../src/db/schema";
 import { parseTrackerCsv, sampleTrackerCsv, summarize } from "../src/lib/transit";
+import { appUrl } from "../src/lib/urls";
 
 // Seeds the demo exporter and a few sample deals. Safe to re-run: deals are only added
 // when the demo exporter has none. `pnpm db:reset` wipes and reseeds.
@@ -28,7 +27,7 @@ const dateOnly = (daysAhead: number) => {
 async function main() {
   const email = (process.env.SEED_EXPORTER_EMAIL ?? "demo@tracepay.test").toLowerCase();
   const password = process.env.SEED_EXPORTER_PASSWORD ?? "avocado2026";
-  const appUrl = (process.env.APP_URL ?? "http://localhost:3000").replace(/\/$/, "");
+  const baseUrl = appUrl();
 
   await db
     .insert(exporters)
@@ -337,17 +336,16 @@ async function main() {
 
     console.log("Sample deals:");
     for (const d of [d5, d3, d1, d2, d4, d6]) {
-      console.log(`  TP-${String(d.seq).padStart(4, "0")}  ${d.status.padEnd(16)} buyer link: ${appUrl}/b/${d.buyerToken}`);
+      console.log(`  TP-${String(d.seq).padStart(4, "0")}  ${d.status.padEnd(16)} buyer link: ${baseUrl}/b/${d.buyerToken}`);
     }
   });
 }
 
 // ---- Sample proof files -------------------------------------------------------------------
 // Clearly watermarked placeholders, never anything resembling a real certificate. Replace the
-// loading photos with real avocado photos for the demo. Written straight to the local storage
-// folder (scripts can't import the server-only storage module).
+// loading photos with real avocado photos for the demo. Written straight to the files table
+// (scripts can't import the server-only storage module).
 
-const STORAGE = path.resolve(process.env.STORAGE_DIR ?? "storage");
 
 function sampleSvg(title: string, lines: string[], tint: string) {
   const esc = (t: string) => t.replace(/[<>&"]/g, (ch) => `&#${ch.charCodeAt(0)};`);
@@ -389,8 +387,7 @@ async function attachSampleProof(
     const fileName = `sample-${it.type.replace(/_/g, "-")}${it.type === "loading_photo" ? `-${i - 1}` : ""}.svg`;
     const fileKey = `deals/${dealId}/${id}-${fileName}`;
     const bytes = Buffer.from(sampleSvg(it.title, it.lines, it.tint));
-    await mkdir(path.dirname(path.join(STORAGE, fileKey)), { recursive: true });
-    await writeFile(path.join(STORAGE, fileKey), bytes);
+    await tx.insert(files).values({ key: fileKey, bytes, contentType: "image/svg+xml", sizeBytes: bytes.byteLength });
     await tx.insert(proofItems).values({
       id,
       dealId,
@@ -432,8 +429,7 @@ async function attachSampleTransit(tx: Tx, dealId: string, number: string, start
   const fileName = `SAMPLE-tracker-${number}.csv`;
   const fileKey = `deals/${dealId}/transit/${crypto.randomUUID()}-${fileName}`;
   const bytes = Buffer.from(text);
-  await mkdir(path.dirname(path.join(STORAGE, fileKey)), { recursive: true });
-  await writeFile(path.join(STORAGE, fileKey), bytes);
+  await tx.insert(files).values({ key: fileKey, bytes, contentType: "text/csv", sizeBytes: bytes.byteLength });
   await tx.insert(transitLogs).values({
     dealId,
     fileKey,

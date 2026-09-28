@@ -13,7 +13,7 @@ export type ConfirmResult = "paid" | "pending" | "failed" | "mismatch";
  * both go through Payaza's status query, so a forged webhook or a bare redirect can't mark anything paid.
  * Idempotent: only the call that flips pending → paid writes events.
  */
-export async function confirmPayment(merchantReference: string, via: "webhook" | "status_check"): Promise<ConfirmResult> {
+export async function confirmPayment(merchantReference: string, via: "webhook" | "status_check" | "callback"): Promise<ConfirmResult> {
   const payment = await db.query.payments.findFirst({ where: eq(payments.merchantReference, merchantReference) });
   if (!payment) return "failed";
   if (payment.status !== "pending") return "paid";

@@ -36,7 +36,8 @@ export const specFor = (type: string) => PROOF_SPECS.find((s) => s.type === type
 
 /** Content types the server accepts from uploads. Never SVG or HTML from users. */
 export const UPLOAD_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "application/pdf", "text/csv"]);
-export const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+// Vercel functions accept request bodies up to 4.5 MB; photos are compressed to ~1 MB on the phone.
+export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
 
 /** Items still missing before proof can be attached. Only fingerprinted items count. */
 export function missingRequired(items: Pick<ProofItem, "type" | "sha256">[]) {

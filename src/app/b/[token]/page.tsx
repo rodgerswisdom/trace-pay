@@ -6,7 +6,7 @@ import { LiveRefresh } from "@/components/live-refresh";
 import { LocalTime } from "@/components/local-time";
 import { ProofGallery } from "@/components/proof-gallery";
 import { ClaimCheckCard, QualityTerms, ReadingsCompared, TransitSummary } from "@/components/quality";
-import { SubmitButton } from "@/components/submit-button";
+import { PayButton } from "@/components/pay-button";
 import { buttonVariants } from "@/components/ui/button";
 import type { Claim } from "@/db/schema";
 import { claimCheckFor } from "@/lib/claim-check";
@@ -17,17 +17,18 @@ import { container } from "@/lib/layout";
 import { fmt } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { dealVersion } from "@/lib/version";
-import { payNext } from "./actions";
 
-// The link is the login: keep it out of search engines and out of Referer headers sent to checkout.
-export const metadata: Metadata = { robots: { index: false, follow: false }, referrer: "no-referrer" };
+
+// The link is the login: keep it out of search engines, and never send it as a Referer to other sites
+// (same-origin still lets our own form posts carry an Origin, which Next requires for server actions).
+export const metadata: Metadata = { robots: { index: false, follow: false }, referrer: "same-origin" };
 
 const s = strings.en; // Buyer side is English.
 const KIND_LABEL = { deposit: "deposit", balance: "balance", final: "final payment" } as const;
 
 export default async function BuyerDealPage({ params, searchParams }: PageProps<"/b/[token]">) {
   const { token } = await params;
-  const { returned, phone: phoneError, claim: claimFlag, arrival: arrivalFlag } = await searchParams;
+  const { returned, phone: phoneError, claim: claimFlag, arrival: arrivalFlag, payment: paymentFlag } = await searchParams;
   const data = await loadDeal({ buyerToken: token });
   if (!data) notFound();
   const { deal, payments, claims, proof, readings, transitLog } = data;
@@ -91,6 +92,10 @@ export default async function BuyerDealPage({ params, searchParams }: PageProps<
               </span>
               <span className="mt-1 block text-sm opacity-80">This usually takes a few seconds. You can keep this page open.</span>
             </Banner>
+          )}
+
+          {paymentFlag === "failed" && next && (
+            <Banner tone="warn">Payment didn&apos;t go through. You haven&apos;t been charged. You can try again below.</Banner>
           )}
 
           {deal.status === "deposit_paid" && (
@@ -239,12 +244,12 @@ export default async function BuyerDealPage({ params, searchParams }: PageProps<
           {((next && !confirming) || canArrive) && (
             <BottomBar>
               {next && !confirming && (
-                <form action={payNext.bind(null, token)}>
-                  {!deal.buyerPhone && <PhoneField invalid={phoneError === "invalid"} />}
-                  <SubmitButton>
-                    Pay {KIND_LABEL[next.kind]} · {fmt(next.amountMinor, c)}
-                  </SubmitButton>
-                </form>
+                <PayButton
+                  token={token}
+                  label={`Pay ${KIND_LABEL[next.kind]} · ${fmt(next.amountMinor, c)}`}
+                  needsPhone={!deal.buyerPhone}
+                  phoneInvalid={phoneError === "invalid"}
+                />
               )}
               {canArrive && (
                 <Link href={`/b/${token}/arrival`} className={cn(buttonVariants({ variant: next && !confirming ? "outline" : "default" }), primaryButton)}>
@@ -282,30 +287,6 @@ function ResponseText({ claim, exporterName, currency }: { claim: Claim; exporte
       </>
     );
   return <>{exporterName} didn&apos;t accept the claim and pointed to their proof of dispatch below. The {what} stays the same.</>;
-}
-
-function PhoneField({ invalid }: { invalid: boolean }) {
-  return (
-    <div className="mb-2 flex flex-col gap-1.5">
-      <label htmlFor="phone" className="text-sm font-medium">
-        Your phone, with country code
-      </label>
-      <input
-        id="phone"
-        name="phone"
-        type="tel"
-        inputMode="tel"
-        autoComplete="tel"
-        required
-        placeholder="+971 50 123 4567"
-        aria-invalid={invalid}
-        className="h-12 w-full rounded-lg border border-input bg-background px-3 text-base outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive"
-      />
-      <p className={invalid ? "text-sm text-destructive" : "text-xs text-muted-foreground"}>
-        {invalid ? "Enter your phone with country code, e.g. +971 50 123 4567." : "The card payment page needs it for security checks."}
-      </p>
-    </div>
-  );
 }
 
 function Row({ term, value, strong, wide }: { term: string; value: string; strong?: boolean; wide?: boolean }) {

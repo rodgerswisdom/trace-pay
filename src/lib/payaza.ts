@@ -18,6 +18,35 @@ function env(name: string) {
 
 const mode = () => (process.env.PAYAZA_MODE === "Live" ? "Live" : "Test");
 
+export type CheckoutInput = {
+  amountMinor: number;
+  currency: string;
+  email: string;
+  name: string;
+  /** E.164. Required: Payaza's card 3-D Secure check rejects an empty phone. */
+  phone: string;
+  reference: string;
+  redirectUrl: string;
+  details?: Record<string, string>;
+};
+
+/** Options for Payaza's Web Checkout SDK (inline modal). Only the public key is included. */
+export function checkoutSdkOptions(p: CheckoutInput) {
+  const [first, ...rest] = p.name.trim().split(/\s+/);
+  return {
+    merchant_key: env("PAYAZA_PUBLIC_KEY"),
+    connection_mode: mode(),
+    checkout_amount: Number((p.amountMinor / 100).toFixed(2)),
+    currency_code: p.currency,
+    email_address: p.email,
+    first_name: first || "Buyer",
+    last_name: rest.join(" ") || first || "Buyer",
+    phone_number: p.phone,
+    transaction_reference: p.reference,
+    additional_details: p.details ?? {},
+  };
+}
+
 export function checkoutUrl(p: {
   amountMinor: number;
   currency: string;

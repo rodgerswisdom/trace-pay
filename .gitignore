@@ -49,3 +49,6 @@ next-env.d.ts
 
 # uploaded files (local storage driver)
 /storage
+
+# local Postgres cluster (pnpm db:local)
+/.pgdata

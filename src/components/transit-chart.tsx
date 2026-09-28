@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { Point } from "@/lib/transit";
 
 // Transit temperature against the agreed range. One series, so no legend box: the section title
@@ -8,6 +8,8 @@ import type { Point } from "@/lib/transit";
 // keyboard stepping, and a table view. Readings outside the range are marked with a label, not colour alone.
 
 const H = 220;
+const noop = () => () => {};
+const viewerZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
 const PAD = { top: 16, right: 56, bottom: 28, left: 40 };
 
 function fmtTime(ms: number, timeZone?: string) {
@@ -31,6 +33,9 @@ export function TransitChart({
   timeZone?: string;
   label?: string;
 }) {
+  // The viewer's zone is only known in the browser: render UTC on the server, then switch after hydration,
+  // so the server and client markup match.
+  const zone = useSyncExternalStore(noop, () => timeZone ?? viewerZone(), () => timeZone ?? "UTC");
   const wrap = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(640);
   const [hover, setHover] = useState<number | null>(null);
@@ -79,7 +84,7 @@ export function TransitChart({
 
   const last = points[points.length - 1];
   const h = hover != null ? points[hover] : null;
-  const summary = `${label}: ${points.length} readings from ${fmtTime(points[0][0], timeZone)} to ${fmtTime(last[0], timeZone)}${
+  const summary = `${label}: ${points.length} readings from ${fmtTime(points[0][0], zone)} to ${fmtTime(last[0], zone)}${
     min != null && max != null ? `; agreed range ${min}–${max} °C; ${geo.outside.length ? `${geo.outside.length} readings outside` : "all readings inside"}` : ""
   }.`;
 
@@ -129,7 +134,7 @@ export function TransitChart({
               textAnchor={i === 0 ? "start" : i === 2 ? "end" : "middle"}
               className="fill-muted-foreground text-[11px]"
             >
-              {fmtTime(t, timeZone)}
+              {fmtTime(t, zone)}
             </text>
           ))}
           {/* The series */}
@@ -168,7 +173,7 @@ export function TransitChart({
               {h[1].toFixed(1)} °C
               {min != null && max != null && (h[1] < min || h[1] > max) && <span className="ml-1 font-medium text-muted-foreground">· ⚠ outside range</span>}
             </p>
-            <p className="text-muted-foreground">{fmtTime(h[0], timeZone)}</p>
+            <p className="text-muted-foreground">{fmtTime(h[0], zone)}</p>
           </div>
         )}
       </div>
@@ -186,7 +191,7 @@ export function TransitChart({
             <tbody>
               {points.map((p) => (
                 <tr key={p[0]} className="border-t">
-                  <td className="px-2 py-1">{fmtTime(p[0], timeZone)}</td>
+                  <td className="px-2 py-1">{fmtTime(p[0], zone)}</td>
                   <td className="px-2 py-1 text-right">
                     {p[1].toFixed(1)}
                     {min != null && max != null && (p[1] < min || p[1] > max) ? " (outside)" : ""}

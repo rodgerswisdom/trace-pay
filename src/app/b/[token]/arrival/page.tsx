@@ -7,7 +7,7 @@ import { fmt } from "@/lib/money";
 import { cn } from "@/lib/utils";
 import { ArrivalForm } from "./arrival-form";
 
-export const metadata: Metadata = { robots: { index: false, follow: false }, referrer: "no-referrer" };
+export const metadata: Metadata = { robots: { index: false, follow: false }, referrer: "same-origin" };
 
 export default async function ArrivalPage({ params, searchParams }: PageProps<"/b/[token]/arrival">) {
   const { token } = await params;

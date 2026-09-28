@@ -36,7 +36,7 @@ export async function uploadClaimPhoto(token: string, file: File) {
   const deal = await dealOpenForArrival(token);
   const ext = CLAIM_PHOTO_TYPES[file.type];
   if (!ext) throw new ClaimError("Photos must be JPEG, PNG or WebP.");
-  if (file.size === 0 || file.size > MAX_UPLOAD_BYTES) throw new ClaimError("Photo is empty or larger than 10 MB.");
+  if (file.size === 0 || file.size > MAX_UPLOAD_BYTES) throw new ClaimError("Photo is empty or larger than 4 MB.");
   const base = safeName(file.name).replace(/\.[^.]+$/, "");
   const key = `${photoPrefix(deal.id)}${crypto.randomUUID()}-${base}.${ext}`;
   await putObject(key, new Uint8Array(await file.arrayBuffer()));

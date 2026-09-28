@@ -1,6 +1,6 @@
 import "server-only";
 import { randomBytes } from "node:crypto";
-import { and, asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { db, type Tx } from "@/db";
 import { claims, deals, events, payments, proofItems, readings, transitLogs, type Claim, type Deal, type DealEvent, type Payment } from "@/db/schema";
 import { splitTranches } from "./money";
@@ -40,7 +40,7 @@ export async function loadDeal(where: { id: string; exporterId: string } | { buy
   if (!deal) return null;
   const [dealPayments, dealEvents, dealClaims, dealProof, dealReadings, [transitLog]] = await Promise.all([
     db.select().from(payments).where(eq(payments.dealId, deal.id)).orderBy(asc(payments.createdAt)),
-    db.select().from(events).where(eq(events.dealId, deal.id)).orderBy(asc(events.createdAt), sql`rowid`),
+    db.select().from(events).where(eq(events.dealId, deal.id)).orderBy(asc(events.n)),
     db.select().from(claims).where(eq(claims.dealId, deal.id)).orderBy(asc(claims.createdAt)),
     db.select().from(proofItems).where(eq(proofItems.dealId, deal.id)).orderBy(asc(proofItems.createdAt)),
     db.select().from(readings).where(eq(readings.dealId, deal.id)),

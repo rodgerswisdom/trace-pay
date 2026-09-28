@@ -40,7 +40,7 @@ export async function addProofItem(dealId: string, form: FormData) {
 
   const file = form.get("file");
   if (!(file instanceof File) || file.size === 0) throw new ProofError("No file received");
-  if (file.size > MAX_UPLOAD_BYTES) throw new ProofError("File is larger than 10 MB");
+  if (file.size > MAX_UPLOAD_BYTES) throw new ProofError("File is larger than 4 MB");
   const contentType = file.type || "application/octet-stream";
   if (!UPLOAD_TYPES.has(contentType) || !spec.accept.split(",").includes(contentType)) {
     throw new ProofError("This file type isn't accepted here");
@@ -74,7 +74,7 @@ export async function addProofItem(dealId: string, form: FormData) {
   const id = crypto.randomUUID();
   const fileKey = `deals/${dealId}/${id}-${safeName(file.name)}`;
 
-  await putObject(fileKey, bytes);
+  await putObject(fileKey, bytes, contentType);
   try {
     return await db.transaction(async (tx) => {
       const [item] = await tx

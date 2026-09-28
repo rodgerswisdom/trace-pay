@@ -1,40 +1,19 @@
 {
   "version": "7",
-  "dialect": "sqlite",
+  "dialect": "postgresql",
   "entries": [
     {
       "idx": 0,
-      "version": "6",
-      "when": 1790529840282,
+      "version": "7",
+      "when": 1790591369613,
       "tag": "0000_init",
       "breakpoints": true
     },
     {
       "idx": 1,
-      "version": "6",
-      "when": 1790529840654,
-      "tag": "0001_append_only_and_proof_lock",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1790542756642,
-      "tag": "0002_buyer_phone",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1790551578238,
-      "tag": "0003_quality_terms_readings_transit",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1790551588266,
-      "tag": "0004_readings_transit_guards",
+      "version": "7",
+      "when": 1790591370025,
+      "tag": "0001_integrity_triggers",
       "breakpoints": true
     }
   ]

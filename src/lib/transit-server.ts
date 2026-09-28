@@ -28,7 +28,7 @@ export async function attachTransitLog(exporterId: string, dealId: string, sourc
     text = sampleTrackerCsv(new Date(Date.now() - 52 * 3600_000), 52, deal.number);
   } else {
     const f = source.file;
-    if (f.size === 0 || f.size > MAX_UPLOAD_BYTES) throw new TransitError("The file is empty or larger than 10 MB.");
+    if (f.size === 0 || f.size > MAX_UPLOAD_BYTES) throw new TransitError("The file is empty or larger than 4 MB.");
     if (!/\.(csv|txt)$/i.test(f.name) && !/csv|text\/plain|ms-excel/.test(f.type)) throw new TransitError("Upload the tracker's CSV export.");
     fileName = f.name.slice(0, 200);
     text = await f.text();
