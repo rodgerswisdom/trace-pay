@@ -39,6 +39,8 @@ export const PROOF_TYPES = [
 ] as const;
 export const CLAIM_REASONS = ["underweight", "immature", "overripe_damaged", "other"] as const;
 
+export type EvidenceItem = { requirement: string; key: string; contentType: string; fileName: string; receivedAt: string };
+
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
 
 const id = () =>
@@ -91,6 +93,10 @@ export const deals = pgTable(
     tempMaxC: doublePrecision("temp_max_c"),
     /** % of the deal value that comes off if an agreed term is breached. */
     breachAdjustPct: integer("breach_adjust_pct"),
+    /** Delivered net weight may be this % below the invoiced weight. Null = no weight term. */
+    weightTolerancePct: doublePrecision("weight_tolerance_pct"),
+    /** Adjustments can be requested until this many hours after proof of dispatch. */
+    adjustWindowHours: integer("adjust_window_hours").notNull().default(120),
     destination: text("destination").notNull(),
     dispatchDate: text("dispatch_date").notNull(), // YYYY-MM-DD
     status: text("status", { enum: DEAL_STATUSES }).notNull().default("awaiting_deposit"),
@@ -161,7 +167,10 @@ export const claims = pgTable("claims", {
   amountRequestedMinor: money("amount_requested_minor").notNull(),
   /** The unpaid tranche the claim holds and reduces. */
   appliesTo: text("applies_to", { enum: ["balance", "final"] }).notNull().default("balance"),
-  status: text("status", { enum: ["open", "accepted", "countered", "rejected"] }).notNull().default("open"),
+  status: text("status", { enum: ["open", "accepted", "countered", "rejected", "withdrawn"] }).notNull().default("open"),
+  /** Evidence the buyer attached, one entry per checklist item. */
+  evidence: jsonb("evidence").$type<EvidenceItem[]>().notNull().default([]),
+  measuredBy: text("measured_by", { enum: ["inspector", "buyer"] }),
   responseNote: text("response_note"),
   agreedAmountMinor: money("agreed_amount_minor"),
   createdAt: createdAt(),
@@ -179,10 +188,13 @@ export const readings = pgTable(
       .references(() => deals.id),
     stage: text("stage", { enum: ["origin", "arrival"] }).notNull(),
     recordedBy: text("recorded_by", { enum: ["exporter", "buyer"] }).notNull(),
-    dryMatterPct: doublePrecision("dry_matter_pct").notNull(),
+    dryMatterPct: doublePrecision("dry_matter_pct"),
     sampleSize: integer("sample_size").notNull(),
     device: text("device").notNull(),
     pulpTempC: doublePrecision("pulp_temp_c"),
+    netWeightKg: doublePrecision("net_weight_kg"),
+    /** Who took the measurement: an independent inspector, the buyer, or the exporter's packhouse. */
+    measuredBy: text("measured_by", { enum: ["inspector", "buyer", "exporter"] }),
     notes: text("notes"),
     proofItemId: text("proof_item_id"),
     recordedAt: ts("recorded_at").notNull(),

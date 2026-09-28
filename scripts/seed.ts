@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db, type Tx } from "../src/db";
-import { claims, deals, events, exporters, files, payments, proofItems, readings, transitLogs } from "../src/db/schema";
+import { claims, deals, events, exporters, files, payments, proofItems, readings, transitLogs, type EvidenceItem } from "../src/db/schema";
 import { parseTrackerCsv, sampleTrackerCsv, summarize } from "../src/lib/transit";
 import { appUrl } from "../src/lib/urls";
 
@@ -53,7 +53,16 @@ async function main() {
   }
 
   // Quality terms agreed on every sample deal.
-  const base = { exporterId: exporter.id, product: "Hass", minDryMatterPct: 23, tempMinC: 4.5, tempMaxC: 7, breachAdjustPct: 10 };
+  const base = {
+    exporterId: exporter.id,
+    product: "Hass",
+    minDryMatterPct: 23,
+    tempMinC: 4.5,
+    tempMaxC: 7,
+    weightTolerancePct: 2,
+    breachAdjustPct: 10,
+    adjustWindowHours: 120,
+  };
 
   await db.transaction(async (tx) => {
     // 1. Waiting for deposit — the numbers from the spec: 1,500 kg × USD 2.10, 30% deposit.
@@ -230,12 +239,18 @@ async function main() {
     await pay(d4.id, "deposit", 79_200, "USD", fxUsd, "0928-DEP", at(8, 14, 2));
     await attachSampleProof(tx, d4.id, "TP-0928", at(5, 16, 40), { dryMatter: "24.6", temp: "5.4", inspection: true });
     const t4 = await attachSampleTransit(tx, d4.id, "TP-0928", at(5, 15, 0));
-    await recordArrival(tx, d4.id, at(1, 11, 20), { dm: 24.1, pulp: 6.2 });
+    // The buyer's own reading is below the term but contradicts the dispatch record: the exporter reviews.
+    await recordArrival(tx, d4.id, at(1, 11, 20), { dm: 21.9, pulp: null, sample: 12 });
     await tx.insert(claims).values({
       dealId: d4.id,
       reason: "immature",
-      description: "Fruit arrived hard and green; about a third of cartons not ripening after 5 days.",
-      amountRequestedMinor: 100_000,
+      description: "Dry matter below the agreed term: dry matter 21.9% (12 fruit), measured by the buyer.",
+      amountRequestedMinor: 26_400, // 10% of USD 2,640, per the agreed terms
+      measuredBy: "buyer",
+      evidence: [
+        await sampleEvidence(tx, d4.id, "reading", "Dry-matter meter reading", ["TP-0928 · on arrival", "Mean 21.9% (12 fruit)"], "#dcfce7", at(1, 11, 10)),
+        await sampleEvidence(tx, d4.id, "sample", "Cut sample fruit", ["TP-0928 · on arrival", "12 fruit, halved"], "#fef9c3", at(1, 11, 12)),
+      ],
       createdAt: at(1, 11, 25),
     });
     await tx.insert(events).values([
@@ -243,9 +258,9 @@ async function main() {
       ev(d4.id, "payaza", "deposit_paid", `Buyer paid deposit · USD 792 · KES ${Math.round(792 * fxUsd).toLocaleString("en-US")} (sample data)`, at(8, 14, 2)),
       ev(d4.id, "exporter", "proof_attached", "Proof of dispatch attached · balance of USD 1,848 requested", at(5, 16, 40)),
       ev(d4.id, "exporter", "transit_log_attached", t4, at(3, 9, 30)),
-      ev(d4.id, "buyer", "arrival_confirmed", "Buyer confirmed arrival · dry matter 24.1% (n=10, F-750 NIR meter) · pulp 6.2 °C", at(1, 11, 20)),
-      ev(d4.id, "buyer", "claim_opened", "Buyer reported a quality issue: immature · asks USD 1,000 off", at(1, 11, 25)),
-      ev(d4.id, "system", "claim_check", "Claim check: Claim not supported by the agreed test. Dry matter met the agreed minimum of 23.0% at origin and on arrival.", at(1, 11, 25)),
+      ev(d4.id, "buyer", "adjustment_requested", "Buyer requested an adjustment · dry matter · dry matter 21.9% (12 fruit), measured by buyer · 2 files · USD 264 per the agreed terms (sample data)", at(1, 11, 25)),
+      ev(d4.id, "system", "on_hold", "Balance on hold while the exporter reviews", at(1, 11, 25)),
+      ev(d4.id, "system", "adjustment_check", "Agreed check: Measurements disagree: the exporter reviews the evidence", at(1, 11, 25)),
     ]);
 
     // 5. Same buyer, earlier deal: paid in full and settled.
@@ -273,7 +288,7 @@ async function main() {
     await pay(d5.id, "deposit", 61_500, "USD", fxUsd, "0924-DEP", at(22, 9, 41), at(21, 10, 0));
     await attachSampleProof(tx, d5.id, "TP-0924", at(18, 17, 5), { dryMatter: "25.1" });
     await attachSampleTransit(tx, d5.id, "TP-0924", at(18, 16, 0));
-    await recordArrival(tx, d5.id, at(16, 8, 40), { dm: 25.0, pulp: 5.9 });
+    await recordArrival(tx, d5.id, at(16, 8, 40), { dm: 25.0, pulp: 5.9, sample: 10 });
     await pay(d5.id, "balance", 143_500, "USD", fxUsd, "0924-BAL", at(15, 13, 12), at(14, 10, 0));
     await tx.insert(events).values([
       ev(d5.id, "exporter", "deal_created", "Deal created · USD 2,050 · deposit USD 615 (30%), balance USD 1,435 after proof", at(24, 10, 0)),
@@ -308,12 +323,15 @@ async function main() {
     await pay(d6.id, "deposit", 108_000, "EUR", fxEur, "0929-DEP", at(15, 12, 20));
     await attachSampleProof(tx, d6.id, "TP-0929", at(12, 15, 30), { dryMatter: "23.9", temp: "5.8" });
     const t6 = await attachSampleTransit(tx, d6.id, "TP-0929", at(12, 14, 0));
-    await recordArrival(tx, d6.id, at(6, 10, 0), { dm: 24.0, pulp: 6.4 });
+    // Pulp was warm on arrival, but the tracker shows the container stayed in range: meets the term.
+    await recordArrival(tx, d6.id, at(6, 10, 0), { dm: null, pulp: 8.4, sample: 8 });
     await tx.insert(claims).values({
       dealId: d6.id,
       reason: "overripe_damaged",
-      description: "Around 6% of cartons bruised on arrival; photos attached.",
-      amountRequestedMinor: 40_000,
+      description: "Temperature below the agreed term: pulp 8.4 °C (8 fruit), measured by the buyer.",
+      amountRequestedMinor: 36_000, // 10% of EUR 3,600, per the agreed terms
+      measuredBy: "buyer",
+      evidence: [await sampleEvidence(tx, d6.id, "reading", "Probe reading", ["TP-0929 · on arrival", "Pulp 8.4 °C (8 fruit)"], "#ffedd5", at(6, 9, 55))],
       status: "countered",
       responseNote: "Loading photos and temperature log show good condition at dispatch; offering EUR 200 as goodwill.",
       agreedAmountMinor: 20_000,
@@ -326,10 +344,10 @@ async function main() {
       ev(d6.id, "payaza", "deposit_paid", `Buyer paid deposit · EUR 1,080 · KES ${Math.round(1080 * fxEur).toLocaleString("en-US")} (sample data)`, at(15, 12, 20)),
       ev(d6.id, "exporter", "proof_attached", "Proof of dispatch attached · balance of EUR 2,520 requested", at(12, 15, 30)),
       ev(d6.id, "exporter", "transit_log_attached", t6, at(10, 9, 0)),
-      ev(d6.id, "buyer", "arrival_confirmed", "Buyer confirmed arrival · dry matter 24.0% (n=10, F-750 NIR meter) · pulp 6.4 °C", at(6, 10, 0)),
-      ev(d6.id, "buyer", "claim_opened", "Buyer reported a quality issue: overripe or damaged · asks EUR 400 off", at(6, 10, 5)),
-      ev(d6.id, "system", "claim_check", "Claim check: Claim not supported by the agreed test. The transit log stayed within the agreed 4.5–7.0 °C.", at(6, 10, 5)),
-      ev(d6.id, "exporter", "claim_countered", "Exporter offered EUR 200 off · new balance EUR 2,320", at(5, 18, 40)),
+      ev(d6.id, "buyer", "adjustment_requested", "Buyer requested an adjustment · temperature · pulp 8.4 °C (8 fruit), measured by buyer · 1 file · EUR 360 per the agreed terms (sample data)", at(6, 10, 5)),
+      ev(d6.id, "system", "on_hold", "Balance on hold while the exporter reviews", at(6, 10, 5)),
+      ev(d6.id, "system", "adjustment_check", "Agreed check: Meets the agreed term: no adjustment under the agreed check", at(6, 10, 5)),
+      ev(d6.id, "exporter", "adjustment_countered", "Exporter confirmed EUR 200 off instead of EUR 360 · new balance EUR 2,320", at(5, 18, 40)),
       ev(d6.id, "payaza", "balance_paid", `Buyer paid balance · EUR 2,320 · KES ${Math.round(2320 * fxEur).toLocaleString("en-US")} (sample data)`, at(3, 9, 55)),
       ev(d6.id, "payaza", "settlement_initiated", "Settlement initiated to exporter (sample data)", at(3, 9, 55)),
     ]);
@@ -408,6 +426,7 @@ async function attachSampleProof(
         dealId,
         stage: "origin",
         recordedBy: "exporter",
+        measuredBy: "exporter",
         dryMatterPct: Number(it.value),
         sampleSize: 10,
         device: "F-750 NIR meter",
@@ -448,18 +467,27 @@ async function attachSampleTransit(tx: Tx, dealId: string, number: string, start
   return `Transit log attached (sample feed) · ${sum.count} readings · ${sum.minC.toFixed(1)}–${sum.maxC.toFixed(1)} °C · always inside the agreed 4.5–7 °C`;
 }
 
-async function recordArrival(tx: Tx, dealId: string, when: Date, r: { dm: number; pulp: number }) {
+async function recordArrival(tx: Tx, dealId: string, when: Date, r: { dm: number | null; pulp: number | null; sample: number }) {
   await tx.insert(readings).values({
     dealId,
     stage: "arrival",
     recordedBy: "buyer",
+    measuredBy: "buyer",
     dryMatterPct: r.dm,
-    sampleSize: 10,
-    device: "F-750 NIR meter",
+    sampleSize: r.sample,
+    device: "Buyer's own test",
     pulpTempC: r.pulp,
     recordedAt: when,
   });
   await tx.update(deals).set({ arrivedAt: when }).where(eq(deals.id, dealId));
+}
+
+/** A watermarked SAMPLE evidence photo from the buyer, stored like a real upload. */
+async function sampleEvidence(tx: Tx, dealId: string, requirement: string, title: string, lines: string[], tint: string, when: Date): Promise<EvidenceItem> {
+  const key = `deals/${dealId}/claims/${crypto.randomUUID()}-sample-${requirement}.svg`;
+  const bytes = Buffer.from(sampleSvg(title, lines, tint));
+  await tx.insert(files).values({ key, bytes, contentType: "image/svg+xml", sizeBytes: bytes.byteLength });
+  return { requirement, key, contentType: "image/svg+xml", fileName: `sample-${requirement}.svg`, receivedAt: when.toISOString() };
 }
 
 main()

@@ -15,6 +15,13 @@
       "when": 1790591370025,
       "tag": "0001_integrity_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790603400638,
+      "tag": "0002_adjustment_flow",
+      "breakpoints": true
     }
   ]
 }

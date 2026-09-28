@@ -35,6 +35,20 @@ export async function createDeal(_prev: NewDealState, formData: FormData): Promi
     tempMinC: z.coerce.number({ error: s.errTemp }).min(-2, s.errTemp).max(20, s.errTemp),
     tempMaxC: z.coerce.number({ error: s.errTemp }).min(-2, s.errTemp).max(25, s.errTemp),
     breachAdjustPct: z.coerce.number({ error: s.errAdjust }).int(s.errAdjust).min(0, s.errAdjust).max(50, s.errAdjust),
+    // Empty = no weight term.
+    weightTolerancePct: z
+      .string()
+      .trim()
+      .transform((v, ctx) => {
+        if (!v) return null;
+        const n = Number(v.replace(",", "."));
+        if (!Number.isFinite(n) || n < 0 || n > 10) {
+          ctx.addIssue({ code: "custom", message: s.errTolerance });
+          return z.NEVER;
+        }
+        return n;
+      }),
+    adjustWindowHours: z.coerce.number().int().refine((h) => [72, 120, 168].includes(h)),
   }).refine((v) => v.tempMaxC > v.tempMinC, { message: s.errTemp, path: ["tempMinC"] })
     .refine((v) => v.depositPct + v.finalPct < 100, { message: s.errWeight, path: ["finalPct"] });
 
@@ -73,6 +87,8 @@ export async function createDeal(_prev: NewDealState, formData: FormData): Promi
         tempMinC: v.tempMinC,
         tempMaxC: v.tempMaxC,
         breachAdjustPct: v.breachAdjustPct,
+        weightTolerancePct: v.weightTolerancePct,
+        adjustWindowHours: v.adjustWindowHours,
         destination: v.destination,
         dispatchDate: v.dispatchDate,
         buyerToken: newBuyerToken(),
@@ -90,7 +106,9 @@ export async function createDeal(_prev: NewDealState, formData: FormData): Promi
       d.id,
       "exporter",
       "terms_set",
-      `Quality terms agreed · dry matter at least ${v.minDryMatterPct}% · transit ${v.tempMinC}–${v.tempMaxC} °C · ${v.breachAdjustPct}% of deal value off per breached term`,
+      `Quality terms agreed · dry matter at least ${v.minDryMatterPct}% · transit ${v.tempMinC}–${v.tempMaxC} °C${
+        v.weightTolerancePct != null ? ` · delivered weight within ${v.weightTolerancePct}%` : ""
+      } · ${v.breachAdjustPct}% of deal value off if a term isn't met · adjustments within ${v.adjustWindowHours / 24} days of dispatch`,
     );
     return d;
   });

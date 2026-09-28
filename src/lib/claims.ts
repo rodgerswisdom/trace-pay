@@ -14,7 +14,8 @@ export const RELEVANT_PROOF: Record<ClaimReason, ProofType[]> = {
 };
 
 export const MAX_CLAIM_PHOTOS = 8;
-export const CLAIM_PHOTO_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+/** Evidence the buyer can upload: photos, and PDFs for tickets and inspectors' reports. */
+export const CLAIM_PHOTO_TYPES: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp", "application/pdf": "pdf" };
 export const contentTypeForKey = (key: string) =>
   Object.entries(CLAIM_PHOTO_TYPES).find(([, ext]) => key.toLowerCase().endsWith(`.${ext}`))?.[0] ?? "application/octet-stream";
 

@@ -1,153 +1,144 @@
 import type { Claim, Deal, Reading, TransitLog } from "@/db/schema";
+import { splitTranches } from "./money";
+import { REASON_TERM, adjustmentFor, meetsTerm, minWeightKg, termStandard, type TermKey } from "./terms";
 import { EXCURSION_TOLERANCE_MIN, summarize } from "./transit";
 
-// The claim check: line up origin vs arrival vs the agreed terms, and say whether the agreed test
-// supports the claim. Pure and deterministic, so the exporter, the buyer and the evidence bundle
-// all see the same result from the same locked data.
+// The adjustment check: line up each evidence source (at dispatch, in transit, at arrival) against the
+// agreed standard, and say whether the agreed term was met. Pure and deterministic, so the buyer, the
+// exporter and the evidence bundle all see the same result from the same recorded data.
+//
+// Rules of thumb that make an invented request hard to fake:
+//  - an independent inspector's measurement, a failing dispatch record or a failing tracker log counts;
+//  - a buyer's own measurement that contradicts the dispatch record goes to the exporter to review;
+//  - a weight shortfall needs a weighbridge ticket, so it counts either way.
 
-export type Verdict = "supported" | "not_supported" | "no_agreed_test" | "insufficient";
+export type Outcome = "below" | "meets" | "review" | "insufficient";
+export type Stage = "dispatch" | "transit" | "arrival";
+export type Source = "independent" | "exporter" | "buyer" | "tracker";
 
-export type CheckLine = {
-  test: "dry_matter" | "transit_temp";
-  agreed: string;
-  origin: string | null;
-  arrival: string | null;
-  transit: string | null;
-  /** true = within terms, false = breached, null = can't tell. */
-  ok: boolean | null;
+export type CheckRow = { stage: Stage; value: string; source: Source; meets: boolean | null };
+
+export type TermCheck = {
+  term: TermKey | null;
+  standard: string | null;
+  rows: CheckRow[];
+  outcome: Outcome;
+  /** The agreed adjustment when the outcome is "below", in minor units. */
+  adjustmentMinor: number;
 };
 
-export type ClaimCheck = {
-  verdict: Verdict;
-  /** The test(s) that decide this kind of claim. */
-  decidingTests: CheckLine["test"][];
-  lines: CheckLine[];
-  /** Plain-English reason for the verdict. */
-  reason: string;
-  /** Terms breached, per the deciding test(s). */
-  breaches: CheckLine["test"][];
-  /** The agreed adjustment if supported, in minor units (capped below what the claim can reduce). */
-  agreedAdjustmentMinor: number;
-  notes: string[];
-};
-
-type Terms = Pick<Deal, "minDryMatterPct" | "tempMinC" | "tempMaxC" | "breachAdjustPct" | "totalMinor">;
-
-const DECIDING: Record<Claim["reason"], CheckLine["test"][]> = {
-  immature: ["dry_matter"],
-  overripe_damaged: ["transit_temp"],
-  underweight: [],
-  other: [],
-};
+type CheckDeal = Pick<
+  Deal,
+  "minDryMatterPct" | "tempMinC" | "tempMaxC" | "weightTolerancePct" | "weightKg" | "breachAdjustPct" | "totalMinor"
+>;
+type R = Pick<Reading, "dryMatterPct" | "pulpTempC" | "netWeightKg" | "sampleSize" | "measuredBy"> | null | undefined;
 
 const pct = (v: number) => `${v.toFixed(1)}%`;
 const degC = (v: number) => `${v.toFixed(1)} °C`;
+const kg = (v: number) => `${v.toLocaleString("en-US", { maximumFractionDigits: 1 })} kg`;
+const arrivalSource = (r: R): Source => (r?.measuredBy === "inspector" ? "independent" : "buyer");
 
-export function checkClaim(input: {
-  reason: Claim["reason"];
-  terms: Terms;
-  origin?: Pick<Reading, "dryMatterPct" | "sampleSize" | "device" | "pulpTempC"> | null;
-  arrival?: Pick<Reading, "dryMatterPct" | "sampleSize" | "device" | "pulpTempC"> | null;
+export function checkTerm(input: {
+  term: TermKey | null;
+  deal: CheckDeal;
+  origin?: R;
+  arrival?: R;
   transit?: Pick<TransitLog, "points"> | null;
-  /** The most the adjustment can be (the tranche the claim reduces, minus one minor unit). */
-  capMinor: number;
-}): ClaimCheck {
-  const { terms, origin, arrival, transit } = input;
-  const lines: CheckLine[] = [];
-  const notes: string[] = [];
+  /** The payment the adjustment would come off. */
+  trancheMinor: number;
+}): TermCheck {
+  const { term, deal, origin, arrival, transit } = input;
+  if (!term) return { term: null, standard: null, rows: [], outcome: "insufficient", adjustmentMinor: 0 };
+  const rows: CheckRow[] = [];
+  let outcome: Outcome = "insufficient";
+  const byInspector = arrival?.measuredBy === "inspector";
 
-  // Dry matter: a maturity test. Breached if a reading is below the agreed minimum.
-  if (terms.minDryMatterPct != null) {
-    const min = terms.minDryMatterPct;
+  if (term === "dry_matter") {
     const o = origin?.dryMatterPct ?? null;
     const a = arrival?.dryMatterPct ?? null;
-    const known = [o, a].filter((v): v is number => v != null);
-    lines.push({
-      test: "dry_matter",
-      agreed: `≥ ${pct(min)}`,
-      origin: o != null ? `${pct(o)} (n=${origin!.sampleSize})` : null,
-      arrival: a != null ? `${pct(a)} (n=${arrival!.sampleSize})` : null,
-      transit: null,
-      ok: known.length === 0 ? null : known.every((v) => v >= min),
-    });
-    if (o != null && a != null && o >= min !== a >= min) notes.push("The origin and arrival dry-matter readings disagree about the minimum.");
+    if (o != null) rows.push({ stage: "dispatch", value: `${pct(o)} · ${origin!.sampleSize} fruit`, source: "exporter", meets: meetsTerm(term, deal, o) });
+    if (a != null) rows.push({ stage: "arrival", value: `${pct(a)} · ${arrival!.sampleSize} fruit`, source: arrivalSource(arrival), meets: meetsTerm(term, deal, a) });
+    const oMeets = meetsTerm(term, deal, o);
+    const aMeets = meetsTerm(term, deal, a);
+    if (oMeets === false || (aMeets === false && byInspector)) outcome = "below";
+    else if (aMeets === false) outcome = "review"; // buyer's own reading vs the dispatch record (or no dispatch record)
+    else if (oMeets === true || aMeets === true) outcome = "meets";
   }
 
-  // Transit temperature: breached if the log sits outside the agreed range for longer than the tolerance.
-  if (terms.tempMinC != null && terms.tempMaxC != null) {
-    const range = `${terms.tempMinC.toFixed(1)}–${terms.tempMaxC.toFixed(1)} °C`;
-    const sum = transit ? summarize(transit.points, { min: terms.tempMinC, max: terms.tempMaxC }) : null;
-    lines.push({
-      test: "transit_temp",
-      agreed: range,
-      origin: origin?.pulpTempC != null ? degC(origin.pulpTempC) : null,
-      arrival: arrival?.pulpTempC != null ? degC(arrival.pulpTempC) : null,
-      transit: sum
-        ? `${degC(sum.minC)} to ${degC(sum.maxC)} · ${sum.minutesOutside ? `${sum.minutesOutside} min outside` : "always inside"}`
-        : null,
-      ok: sum ? (sum.minutesOutside ?? 0) <= EXCURSION_TOLERANCE_MIN : null,
-    });
-    if (sum && (sum.minutesOutside ?? 0) > 0 && (sum.minutesOutside ?? 0) <= EXCURSION_TOLERANCE_MIN) {
-      notes.push(`Brief excursions (${sum.minutesOutside} min) are within the ${EXCURSION_TOLERANCE_MIN}-minute tolerance.`);
+  if (term === "temperature") {
+    const range = { min: deal.tempMinC, max: deal.tempMaxC };
+    if (origin?.pulpTempC != null) rows.push({ stage: "dispatch", value: degC(origin.pulpTempC), source: "exporter", meets: meetsTerm(term, deal, origin.pulpTempC) });
+    let tMeets: boolean | null = null;
+    if (transit) {
+      const sum = summarize(transit.points, range);
+      tMeets = (sum.minutesOutside ?? 0) <= EXCURSION_TOLERANCE_MIN;
+      rows.push({
+        stage: "transit",
+        value: `${degC(sum.minC)} to ${degC(sum.maxC)}${sum.minutesOutside ? ` · ${sum.minutesOutside} min outside` : ""}`,
+        source: "tracker",
+        meets: tMeets,
+      });
     }
+    const a = arrival?.pulpTempC ?? null;
+    if (a != null) rows.push({ stage: "arrival", value: `${degC(a)} · ${arrival!.sampleSize} fruit`, source: arrivalSource(arrival), meets: meetsTerm(term, deal, a) });
+    const aMeets = meetsTerm(term, deal, a);
+    if (tMeets === false) outcome = "below";
+    else if (tMeets === true) outcome = aMeets === false && byInspector ? "review" : "meets";
+    else if (aMeets === false) outcome = byInspector ? "below" : "review";
+    else if (aMeets === true) outcome = "meets";
   }
 
-  const deciding = DECIDING[input.reason].filter((t) => lines.some((l) => l.test === t));
-  const decidingLines = lines.filter((l) => deciding.includes(l.test));
-  const breaches = decidingLines.filter((l) => l.ok === false).map((l) => l.test);
-
-  let verdict: Verdict;
-  let reason: string;
-  if (DECIDING[input.reason].length === 0 || deciding.length === 0) {
-    verdict = "no_agreed_test";
-    reason = "No agreed test covers this kind of claim. Review the evidence.";
-  } else if (breaches.length > 0) {
-    verdict = "supported";
-    reason = breaches.includes("dry_matter")
-      ? `A dry-matter reading is below the agreed minimum of ${pct(terms.minDryMatterPct!)}.`
-      : `The transit log was outside the agreed ${decidingLines[0].agreed} for longer than ${EXCURSION_TOLERANCE_MIN} minutes.`;
-  } else if (decidingLines.some((l) => l.ok === null)) {
-    verdict = "insufficient";
-    reason = deciding.includes("transit_temp") ? "No transit log was attached, so the agreed temperature test can't be run." : "No dry-matter reading was recorded.";
-  } else {
-    verdict = "not_supported";
-    reason = deciding.includes("dry_matter")
-      ? `Dry matter met the agreed minimum of ${pct(terms.minDryMatterPct!)}${arrival ? " at origin and on arrival" : " at origin (no arrival reading)"}.`
-      : `The transit log stayed within the agreed ${decidingLines[0].agreed}.`;
+  if (term === "weight") {
+    rows.push({ stage: "dispatch", value: `${kg(deal.weightKg)} invoiced`, source: "exporter", meets: meetsTerm(term, deal, deal.weightKg) });
+    const a = arrival?.netWeightKg ?? null;
+    if (a != null) rows.push({ stage: "arrival", value: `${kg(a)} · ${arrival!.sampleSize} cartons`, source: arrivalSource(arrival), meets: meetsTerm(term, deal, a) });
+    const aMeets = meetsTerm(term, deal, a);
+    // A weighbridge ticket is required evidence, so a shortfall counts whoever weighed it.
+    if (aMeets === false) outcome = "below";
+    else if (aMeets === true) outcome = "meets";
   }
 
-  const adjustment =
-    verdict === "supported" && terms.breachAdjustPct
-      ? Math.min(Math.round((terms.totalMinor * terms.breachAdjustPct * breaches.length) / 100), Math.max(0, input.capMinor))
-      : 0;
-
-  return { verdict, decidingTests: deciding, lines, reason, breaches, agreedAdjustmentMinor: adjustment, notes };
+  return {
+    term,
+    standard: termStandard(term, deal),
+    rows,
+    outcome,
+    adjustmentMinor: outcome === "below" ? adjustmentFor(deal, input.trancheMinor) : 0,
+  };
 }
 
-export const VERDICT_LABEL: Record<Verdict, string> = {
-  supported: "Claim supported",
-  not_supported: "Claim not supported by the agreed test",
-  no_agreed_test: "No agreed test for this claim",
-  insufficient: "Not enough data to check",
-};
-
-/** The check for a deal's claim, from loadDeal data. The cap is the tranche the claim reduces. */
+/** The check for a deal's adjustment request, from loadDeal data. */
 export function claimCheckFor(data: {
-  deal: Terms & Pick<Deal, "depositPct" | "finalPct">;
+  deal: CheckDeal & Pick<Deal, "depositPct" | "finalPct">;
   claim: Pick<Claim, "reason" | "appliesTo">;
-  readings: Pick<Reading, "stage" | "dryMatterPct" | "sampleSize" | "device" | "pulpTempC">[];
+  readings: (NonNullable<R> & Pick<Reading, "stage">)[];
   transitLog: Pick<TransitLog, "points"> | null;
 }) {
-  const { deal, claim } = data;
-  const deposit = Math.round((deal.totalMinor * deal.depositPct) / 100);
-  const final = Math.round((deal.totalMinor * deal.finalPct) / 100);
-  const tranche = claim.appliesTo === "final" ? final : deal.totalMinor - deposit - final;
-  return checkClaim({
-    reason: claim.reason,
-    terms: deal,
-    origin: data.readings.find((r) => r.stage === "origin") ?? null,
-    arrival: data.readings.find((r) => r.stage === "arrival") ?? null,
+  const gross = splitTranches(data.deal.totalMinor, data.deal.depositPct, data.deal.finalPct);
+  return checkTerm({
+    term: REASON_TERM[data.claim.reason] ?? null,
+    deal: data.deal,
+    origin: data.readings.find((r) => r.stage === "origin"),
+    arrival: data.readings.find((r) => r.stage === "arrival"),
     transit: data.transitLog,
-    capMinor: tranche - 1,
+    trancheMinor: data.claim.appliesTo === "final" ? gross.final : gross.balance,
   });
 }
+
+/** Plain-English outcome, used on the timeline and in the evidence bundle. */
+export const OUTCOME_TEXT: Record<Outcome, string> = {
+  below: "Below the agreed term: the agreed adjustment applies",
+  meets: "Meets the agreed term: no adjustment under the agreed check",
+  review: "Measurements disagree: the exporter reviews the evidence",
+  insufficient: "Not enough records to run the agreed check",
+};
+
+export const STAGE_LABEL: Record<Stage, string> = { dispatch: "At dispatch", transit: "In transit", arrival: "At arrival" };
+export const SOURCE_LABEL: Record<Source, string> = {
+  independent: "Independent",
+  exporter: "Recorded by exporter",
+  buyer: "Recorded by buyer",
+  tracker: "Container tracker",
+};
+
+export { minWeightKg };

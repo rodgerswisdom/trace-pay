@@ -100,6 +100,7 @@ export async function addProofItem(dealId: string, form: FormData) {
           dealId,
           stage: "origin",
           recordedBy: "exporter",
+          measuredBy: "exporter",
           dryMatterPct: Number(value),
           sampleSize: structured.sampleSize,
           device: structured.device,

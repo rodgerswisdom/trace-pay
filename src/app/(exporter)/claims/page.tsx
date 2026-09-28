@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CheckCircle2Icon, CircleHelpIcon, TriangleAlertIcon } from "lucide-react";
+import { CheckCircle2Icon, CircleHelpIcon, XCircleIcon } from "lucide-react";
 import { claimCheckFor } from "@/lib/claim-check";
 import { requireExporter } from "@/auth";
 import { buttonVariants } from "@/components/ui/button";
@@ -39,9 +39,9 @@ export default async function ClaimsPage() {
         ) : (
           <ul className="grid gap-3 lg:grid-cols-2">
             {open.map((c) => (
-              <li key={c.id} className="flex flex-col gap-3 rounded-xl border-2 border-red-500 bg-red-50/50 p-4 md:p-5 dark:bg-red-950/20">
+              <li key={c.id} className="flex flex-col gap-3 rounded-xl border-2 border-amber-300 bg-amber-50/40 p-4 md:p-5 dark:border-amber-800 dark:bg-amber-950/20">
                 <ClaimHeader c={c} s={s} d={d} />
-                <p className="text-sm">&ldquo;{c.description}&rdquo;</p>
+                <p className="text-sm">{c.description}</p>
                 <p className="font-medium">
                   {both(c.amountRequestedMinor, c.deal.currency, kesRate(c.deal.currency))} {s.asked}
                 </p>
@@ -69,7 +69,9 @@ export default async function ClaimsPage() {
                   ? `${s.accepted} · ${fmt(c.agreedAmountMinor ?? c.amountRequestedMinor, cur)} ${d.off}`
                   : c.status === "countered"
                     ? `${s.countered} · ${fmt(c.agreedAmountMinor ?? 0, cur)} ${d.off} (${d.asked.toLowerCase()} ${fmt(c.amountRequestedMinor, cur)})`
-                    : `${s.rejected} · ${d.asked.toLowerCase()} ${fmt(c.amountRequestedMinor, cur)}`;
+                    : c.status === "withdrawn"
+                      ? s.withdrawn
+                      : `${s.rejected} · ${d.asked.toLowerCase()} ${fmt(c.amountRequestedMinor, cur)}`;
               return (
                 <li key={c.id}>
                   <Link href={`/deals/${c.deal.id}`} className="flex flex-col gap-2 p-4 transition-colors hover:bg-muted/50 md:p-5">
@@ -96,7 +98,7 @@ export default async function ClaimsPage() {
 
 function ClaimHeader({ c, s, d }: { c: Row; s: ReturnType<typeof t>["claimsList"]; d: ReturnType<typeof t>["deal"] }) {
   const check = claimCheckFor({ deal: c.deal, claim: c, readings: c.deal.readings, transitLog: c.deal.transitLog });
-  const Icon = check.verdict === "supported" ? TriangleAlertIcon : check.verdict === "not_supported" ? CheckCircle2Icon : CircleHelpIcon;
+  const Icon = check.outcome === "below" ? XCircleIcon : check.outcome === "meets" ? CheckCircle2Icon : CircleHelpIcon;
   return (
     <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
       <div className="min-w-0">
@@ -109,10 +111,10 @@ function ClaimHeader({ c, s, d }: { c: Row; s: ReturnType<typeof t>["claimsList"
             aria-hidden
             className={cn(
               "size-4",
-              check.verdict === "supported" ? "text-amber-600" : check.verdict === "not_supported" ? "text-emerald-600" : "text-muted-foreground",
+              check.outcome === "below" ? "text-red-700 dark:text-red-400" : check.outcome === "meets" ? "text-emerald-600" : "text-muted-foreground",
             )}
           />
-          {d.verdict[check.verdict]}
+          {d.outcomes[check.outcome]}
         </p>
       </div>
       <p className="text-xs text-muted-foreground">{fmtTimeEAT(c.createdAt)}</p>

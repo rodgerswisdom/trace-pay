@@ -118,6 +118,20 @@ export function NewDealForm({ s, currencies, rates }: { s: S; currencies: readon
               </div>
               {(e.tempMinC || e.tempMaxC) && <p className="text-sm text-destructive">{e.tempMinC ?? e.tempMaxC}</p>}
             </div>
+            <div className="flex flex-col gap-1.5">
+              <Field name="weightTolerancePct" label={s.weightTolerance} error={e.weightTolerancePct} defaultValue={v.weightTolerancePct ?? "2"} inputMode="decimal" />
+              {!e.weightTolerancePct && <p className="-mt-1 text-xs text-muted-foreground">{s.weightToleranceHint}</p>}
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="adjustWindowHours">{s.window}</Label>
+              <select id="adjustWindowHours" name="adjustWindowHours" defaultValue={v.adjustWindowHours ?? "120"} className={selectClass}>
+                {[3, 5, 7].map((d) => (
+                  <option key={d} value={d * 24}>
+                    {s.windowDays.replace("{days}", String(d))}
+                  </option>
+                ))}
+              </select>
+            </div>
             <Field
               className="sm:col-span-2 sm:max-w-md"
               name="breachAdjustPct"

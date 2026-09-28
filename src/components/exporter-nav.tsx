@@ -19,6 +19,7 @@ import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/s
 import { buttonVariants } from "@/components/ui/button";
 import type { strings } from "@/lib/i18n";
 import { cn } from "@/lib/utils";
+import { Logo } from "@/components/logo";
 
 type NavStrings = (typeof strings)["en"]["nav"];
 type Counts = { needsYou: number; openClaims: number };
@@ -129,8 +130,8 @@ function SidebarBody({ s, counts, businessName, signOutLabel, signOutAction, onN
 
 function Brand({ businessName }: { businessName: string }) {
   return (
-    <Link href="/home" className="flex min-w-0 flex-col leading-tight">
-      <span className="text-sm font-semibold tracking-wide text-primary">TRACE Pay</span>
+    <Link href="/home" className="flex min-w-0 flex-col items-start gap-1 leading-tight">
+      <Logo height={26} priority />
       <span className="truncate text-xs text-muted-foreground">{businessName}</span>
     </Link>
   );
@@ -173,7 +174,9 @@ export function MobileTopBar(props: SidebarProps) {
             <SheetContent side="left" showCloseButton={false} className="w-[85%] max-w-xs gap-0 p-0">
               <div className="flex items-center justify-between border-b py-2 pr-2 pl-4">
                 <div className="min-w-0">
-                  <SheetTitle className="text-sm font-semibold tracking-wide text-primary">TRACE Pay</SheetTitle>
+                  <SheetTitle>
+                    <Logo height={20} />
+                  </SheetTitle>
                   <p className="truncate text-xs text-muted-foreground">{props.businessName}</p>
                 </div>
                 <button

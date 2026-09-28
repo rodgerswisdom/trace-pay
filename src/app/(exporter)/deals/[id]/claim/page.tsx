@@ -1,14 +1,16 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { FileTextIcon } from "lucide-react";
 import { requireExporter } from "@/auth";
 import { ProofGallery } from "@/components/proof-gallery";
-import { ClaimCheckCard } from "@/components/quality";
+import { AdjustmentCheck, SourceTag } from "@/components/quality";
 import { claimCheckFor } from "@/lib/claim-check";
 import { RELEVANT_PROOF } from "@/lib/claims";
 import { amountsDue, fmtTimeEAT, loadDeal } from "@/lib/deals";
 import { t } from "@/lib/i18n";
 import { sectionTitle } from "@/lib/layout";
 import { both, kesRate } from "@/lib/money";
+import { REASON_TERM, termName, termRequirements } from "@/lib/terms";
 import { RespondForm } from "./respond-form";
 
 export default async function RespondToClaimPage({ params }: PageProps<"/deals/[id]/claim">) {
@@ -23,18 +25,21 @@ export default async function RespondToClaimPage({ params }: PageProps<"/deals/[
   const s = t(exporter.language);
   const r = s.respond;
   const rate = kesRate(deal.currency);
-  // The claim holds one tranche: the balance, or the final payment if the balance was already paid.
+  // The request holds one payment: the balance, or the final payment if the balance was already paid.
   const due = amountsDue(deal);
   const trancheMinor = claim.appliesTo === "final" ? due.final : due.balance;
   const check = claimCheckFor({ deal, claim, readings, transitLog });
+  const term = REASON_TERM[claim.reason];
+  const requirementLabel = (id: string) =>
+    term ? (termRequirements(term, claim.measuredBy ?? "buyer").find((x) => x.id === id)?.label ?? id) : id;
+  const source = claim.measuredBy === "inspector" ? s.deal.sources.independent : s.deal.sources.buyer;
 
-  // Most relevant proof first: for "immature", the dry-matter reading and its timestamp.
+  // Most relevant proof first: for dry matter, the packhouse reading and its timestamp.
   const priority = RELEVANT_PROOF[claim.reason];
-  const relevant = proof
-    .filter((p) => priority.includes(p.type))
-    .sort((a, b) => priority.indexOf(a.type) - priority.indexOf(b.type));
+  const relevant = proof.filter((p) => priority.includes(p.type)).sort((a, b) => priority.indexOf(a.type) - priority.indexOf(b.type));
   const others = proof.filter((p) => !priority.includes(p.type));
   const fileUrl = (itemId: string) => `/deals/${id}/files/${itemId}`;
+  const evidenceUrl = (n: number) => `/deals/${id}/claims/${claim.id}/${n}`;
 
   return (
     <main className="flex w-full max-w-5xl flex-1 flex-col gap-5 md:gap-6">
@@ -48,14 +53,17 @@ export default async function RespondToClaimPage({ params }: PageProps<"/deals/[
           <section>
             <h2 className={sectionTitle}>{s.deal.check}</h2>
             <p className="mb-3 text-sm text-muted-foreground">{s.deal.checkIntro}</p>
-            <ClaimCheckCard check={check} s={s.deal} currency={deal.currency} />
+            <AdjustmentCheck check={check} s={s.deal} currency={deal.currency} />
           </section>
 
-          {/* The buyer's claim, in their words */}
-          <section className="rounded-xl border-2 border-red-500 bg-red-50/50 p-4 md:p-5 dark:bg-red-950/20">
+          {/* The buyer's request */}
+          <section className="rounded-xl border-2 border-amber-300 bg-amber-50/40 p-4 md:p-5 dark:border-amber-800 dark:bg-amber-950/20">
             <h2 className={sectionTitle}>{r.theirClaim}</h2>
-            <p className="text-lg font-semibold">{s.claimsList.reason[claim.reason]}</p>
-            <blockquote className="mt-2 border-l-4 border-red-300 pl-3 text-base">&ldquo;{claim.description}&rdquo;</blockquote>
+            <p className="flex flex-wrap items-center gap-2 text-lg font-semibold">
+              {term ? termName(term) : s.claimsList.reason[claim.reason]}
+              <SourceTag label={source} />
+            </p>
+            <p className="mt-2 text-base">{claim.description}</p>
             <p className="mt-3 font-medium">
               {r.asks}: {both(claim.amountRequestedMinor, deal.currency, rate)}
             </p>
@@ -64,16 +72,23 @@ export default async function RespondToClaimPage({ params }: PageProps<"/deals/[
             </p>
             <div className="mt-4">
               <p className="mb-2 text-sm font-medium">{r.photos}</p>
-              {claim.photoKeys.length === 0 ? (
+              {claim.evidence.length === 0 && claim.photoKeys.length === 0 ? (
                 <p className="text-sm text-muted-foreground">{r.noPhotos}</p>
               ) : (
-                <ul className="grid grid-cols-3 gap-2 sm:grid-cols-4">
-                  {claim.photoKeys.map((_, n) => (
-                    <li key={n}>
-                      <a href={`/deals/${id}/claims/${claim.id}/${n}`} target="_blank" rel="noopener">
-                        {/* eslint-disable-next-line @next/next/no-img-element -- private, access-checked route */}
-                        <img src={`/deals/${id}/claims/${claim.id}/${n}`} alt="" className="aspect-square w-full rounded-lg border object-cover" />
+                <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                  {(claim.evidence.length ? claim.evidence : claim.photoKeys.map((key) => ({ requirement: "", key, contentType: "image/jpeg", fileName: "", receivedAt: "" }))).map((e, n) => (
+                    <li key={e.key} className="overflow-hidden rounded-lg border">
+                      <a href={evidenceUrl(n)} target="_blank" rel="noopener" className="block">
+                        {e.contentType.startsWith("image/") ? (
+                          // eslint-disable-next-line @next/next/no-img-element -- private, access-checked route
+                          <img src={evidenceUrl(n)} alt="" className="aspect-[4/3] w-full bg-muted object-cover" />
+                        ) : (
+                          <span className="flex aspect-[4/3] w-full items-center justify-center bg-muted text-muted-foreground">
+                            <FileTextIcon className="size-8" />
+                          </span>
+                        )}
                       </a>
+                      {e.requirement && <p className="p-2 text-xs font-medium">{requirementLabel(e.requirement)}</p>}
                     </li>
                   ))}
                 </ul>
@@ -110,7 +125,7 @@ export default async function RespondToClaimPage({ params }: PageProps<"/deals/[
             rate={rate}
             balanceMinor={trancheMinor}
             requestedMinor={claim.amountRequestedMinor}
-            suggestedMinor={check.verdict === "supported" && check.agreedAdjustmentMinor < claim.amountRequestedMinor ? check.agreedAdjustmentMinor : null}
+            suggestedMinor={null}
             trancheLabel={claim.appliesTo === "final" ? s.deal.final : s.deal.balance}
           />
         </aside>

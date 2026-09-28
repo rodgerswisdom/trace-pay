@@ -8,7 +8,7 @@ import { deals, type Payment } from "@/db/schema";
 import { BottomBar, primaryButton } from "@/components/bottom-bar";
 import { LiveRefresh } from "@/components/live-refresh";
 import { ProofGallery } from "@/components/proof-gallery";
-import { ClaimCheckCard, QualityTerms, ReadingsCompared, TransitSummary } from "@/components/quality";
+import { AdjustmentCheck, QualityTerms, ReadingsCompared, TransitSummary } from "@/components/quality";
 import { TransitAttach } from "@/components/transit-attach";
 import { claimCheckFor } from "@/lib/claim-check";
 import { StatusChip } from "@/components/status-chip";
@@ -137,22 +137,23 @@ export default async function DealPage({ params }: PageProps<"/deals/[id]">) {
           {claims.map((cl) => (
             <section key={cl.id}>
               <h2 className={sectionTitle}>{s.deal.claim}</h2>
-              <div className={cn("rounded-xl border p-4 md:p-5", cl.status === "open" && "border-2 border-red-500 bg-red-50/50 dark:bg-red-950/20")}>
+              <div className={cn("rounded-xl border p-4 md:p-5", cl.status === "open" && "border-2 border-amber-300 bg-amber-50/40 dark:border-amber-800 dark:bg-amber-950/20")}>
                 <p className="font-medium">
+                  {cl.status === "withdrawn" ? `${s.claimsList.withdrawn} · ` : ""}
                   {s.claimsList.reason[cl.reason]} · {s.deal.asked} {both(cl.amountRequestedMinor, deal.currency, rate)} {s.deal.off}
                 </p>
-                <p className="mt-1 text-sm">&ldquo;{cl.description}&rdquo;</p>
+                <p className="mt-1 text-sm">{cl.description}</p>
                 <p className="mt-1 text-xs text-muted-foreground">
                   {s.deal.actor.buyer} · {fmtTimeEAT(cl.createdAt)}
-                  {cl.photoKeys.length > 0 && (
+                  {cl.evidence.length + cl.photoKeys.length > 0 && (
                     <>
                       {" · "}
-                      <CameraIcon aria-hidden className="inline size-3.5" /> {cl.photoKeys.length}
+                      <CameraIcon aria-hidden className="inline size-3.5" /> {cl.evidence.length + cl.photoKeys.length}
                     </>
                   )}
                 </p>
                 <div className="mt-4">
-                  <ClaimCheckCard check={claimCheckFor({ deal, claim: cl, readings, transitLog })} s={s.deal} currency={deal.currency} />
+                  <AdjustmentCheck check={claimCheckFor({ deal, claim: cl, readings, transitLog })} s={s.deal} currency={deal.currency} />
                 </div>
                 {cl.status !== "open" && (
                   <p className="mt-3 text-sm font-medium">
@@ -177,7 +178,7 @@ export default async function DealPage({ params }: PageProps<"/deals/[id]">) {
             <section>
               <h2 className={sectionTitle}>{s.deal.transit}</h2>
               {transitLog ? (
-                <TransitSummary log={transitLog} deal={deal} s={s.deal} timeZone="Africa/Nairobi" downloadHref={`/deals/${deal.id}/transit`} />
+                <TransitSummary log={transitLog} deal={deal} s={s.deal} timeZone="Africa/Nairobi" downloadHref={`/deals/${deal.id}/transit`} showFingerprint />
               ) : (
                 <TransitAttach dealId={deal.id} labels={{ attach: s.deal.attachTransit, sample: s.deal.useSample, hint: s.deal.transitHint }} />
               )}

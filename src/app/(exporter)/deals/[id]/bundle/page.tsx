@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireExporter } from "@/auth";
 import { PrintButton } from "@/components/print-button";
-import { ClaimCheckCard } from "@/components/quality";
+import { AdjustmentCheck } from "@/components/quality";
 import { TransitChart } from "@/components/transit-chart";
 import { claimCheckFor } from "@/lib/claim-check";
 import { downsample } from "@/lib/transit";
@@ -19,7 +19,13 @@ const s = strings.en;
 const utc = (d: Date) => `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`;
 const both = (d: Date) => `${utc(d)} (${fmtTimeEAT(d)} EAT)`;
 const ACTOR = { exporter: "Exporter", buyer: "Buyer", payaza: "Payaza", system: "TRACE Pay" } as const;
-const CLAIM_OUTCOME = { open: "Open", accepted: "Accepted in full", countered: "Settled at a different amount", rejected: "Rejected with proof" } as const;
+const CLAIM_OUTCOME = {
+  open: "Open",
+  accepted: "Accepted in full",
+  countered: "Settled at a different amount",
+  rejected: "Kept as agreed, based on the dispatch records",
+  withdrawn: "Withdrawn by the buyer",
+} as const;
 
 export default async function EvidenceBundlePage({ params }: PageProps<"/deals/[id]/bundle">) {
   const { id } = await params;
@@ -131,20 +137,23 @@ export default async function EvidenceBundlePage({ params }: PageProps<"/deals/[
             <tr className="border-b text-xs text-muted-foreground uppercase">
               <th className="py-2 pr-3">Stage</th>
               <th className="py-2 pr-3">Dry matter</th>
-              <th className="py-2 pr-3">Sample · device</th>
               <th className="py-2 pr-3">Pulp</th>
+              <th className="py-2 pr-3">Net weight</th>
+              <th className="py-2 pr-3">Sample · by</th>
               <th className="py-2 pr-3">Recorded</th>
             </tr>
           </thead>
           <tbody>
             {(["origin", "arrival"] as const).map((stage) => {
               const r = readings.find((x) => x.stage === stage);
+              const by = !r ? "" : stage === "origin" ? "Recorded by exporter" : r.measuredBy === "inspector" ? "Independent" : "Recorded by buyer";
               return (
                 <tr key={stage} className="border-b align-top">
-                  <td className="py-2 pr-3">{stage === "origin" ? "Packhouse (exporter)" : "Arrival (buyer)"}</td>
-                  <td className="py-2 pr-3">{r ? `${r.dryMatterPct.toFixed(1)}%` : "—"}</td>
-                  <td className="py-2 pr-3">{r ? `${r.sampleSize} fruit · ${r.device}` : "—"}</td>
+                  <td className="py-2 pr-3">{stage === "origin" ? "At dispatch" : "At arrival"}</td>
+                  <td className="py-2 pr-3">{r?.dryMatterPct != null ? `${r.dryMatterPct.toFixed(1)}%` : "—"}</td>
                   <td className="py-2 pr-3">{r?.pulpTempC != null ? `${r.pulpTempC.toFixed(1)} °C` : "—"}</td>
+                  <td className="py-2 pr-3">{r?.netWeightKg != null ? `${r.netWeightKg.toLocaleString("en-US")} kg` : "—"}</td>
+                  <td className="py-2 pr-3">{r ? `${r.sampleSize} · ${by} · ${r.device}` : "—"}</td>
                   <td className="py-2 pr-3">{r ? both(r.recordedAt) : "—"}</td>
                 </tr>
               );
@@ -213,30 +222,39 @@ export default async function EvidenceBundlePage({ params }: PageProps<"/deals/[
         )}
       </Section>
 
-      <Section title="5. Quality claim, check and response">
+      <Section title="5. Quality adjustment, check and response">
         {claims.length === 0 ? (
-          <p className="text-muted-foreground">No claim was raised.</p>
+          <p className="text-muted-foreground">No adjustment was requested.</p>
         ) : (
-          claims.map((cl) => (
+          claims.map((cl) => {
+            const files = cl.evidence.length ? cl.evidence : cl.photoKeys.map((key) => ({ key, contentType: "image/jpeg", requirement: "", fileName: "", receivedAt: "" }));
+            return (
             <div key={cl.id} className="flex flex-col gap-1.5">
               <p>
-                <span className="font-semibold">{s.claimsList.reason[cl.reason]}</span> · raised {both(cl.createdAt)} · asked{" "}
-                {fmt(cl.amountRequestedMinor, c)} off
+                <span className="font-semibold">{s.claimsList.reason[cl.reason]}</span> · requested {both(cl.createdAt)} ·{" "}
+                {fmt(cl.amountRequestedMinor, c)} per the agreed terms ·{" "}
+                {cl.measuredBy === "inspector" ? "Independent" : "Recorded by buyer"}
               </p>
-              <p className="border-l-2 pl-3">&ldquo;{cl.description}&rdquo;</p>
+              <p className="border-l-2 pl-3">{cl.description}</p>
               <p>
-                Buyer photos: {cl.photoKeys.length}
-                {cl.photoKeys.length > 0 && (
-                  <span className="mt-1 flex gap-2">
-                    {cl.photoKeys.map((_, n) => (
-                      // eslint-disable-next-line @next/next/no-img-element -- private, access-checked route
-                      <img key={n} src={`/deals/${id}/claims/${cl.id}/${n}`} alt="" className="size-16 rounded border object-cover" />
-                    ))}
+                Buyer evidence: {files.length} file{files.length === 1 ? "" : "s"}
+                {files.length > 0 && (
+                  <span className="mt-1 flex flex-wrap gap-2">
+                    {files.map((f, n) =>
+                      f.contentType.startsWith("image/") ? (
+                        // eslint-disable-next-line @next/next/no-img-element -- private, access-checked route
+                        <img key={f.key} src={`/deals/${id}/claims/${cl.id}/${n}`} alt="" className="size-16 rounded border object-cover" />
+                      ) : (
+                        <span key={f.key} className="flex size-16 items-center justify-center rounded border text-xs text-muted-foreground">
+                          PDF
+                        </span>
+                      ),
+                    )}
                   </span>
                 )}
               </p>
               <div className="my-2 break-inside-avoid">
-                <ClaimCheckCard check={claimCheckFor({ deal, claim: cl, readings, transitLog })} s={s.deal} currency={c} />
+                <AdjustmentCheck check={claimCheckFor({ deal, claim: cl, readings, transitLog })} s={s.deal} currency={c} />
               </div>
               <p>
                 Outcome: <span className="font-semibold">{CLAIM_OUTCOME[cl.status]}</span>
@@ -245,7 +263,8 @@ export default async function EvidenceBundlePage({ params }: PageProps<"/deals/[
               </p>
               {cl.responseNote && <p className="border-l-2 pl-3">Exporter: &ldquo;{cl.responseNote}&rdquo;</p>}
             </div>
-          ))
+            );
+          })
         )}
       </Section>
 

@@ -4,6 +4,7 @@ import { signIn } from "@/auth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Logo } from "@/components/logo";
 
 export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   const { error } = await searchParams;
@@ -26,7 +27,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
     <main className="flex flex-1 items-center justify-center px-4 py-10 md:bg-muted/40">
       <div className="flex w-full max-w-sm flex-col gap-8 md:rounded-2xl md:border md:bg-background md:p-8 md:shadow-sm">
         <div>
-          <p className="text-sm font-semibold tracking-wide text-primary">TRACE Pay</p>
+          <Logo height={28} priority />
           <h1 className="mt-1 text-2xl font-semibold">Sign in</h1>
           <p className="mt-1 text-sm text-muted-foreground">Your deals, your proof, your money.</p>
         </div>
