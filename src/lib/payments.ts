@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { claims, deals, payments, type Deal, type Payment } from "@/db/schema";
 import { amountsDue, newMerchantReference, recordEvent } from "./deals";
+import { lockDealDocuments } from "./deal-documents";
 import { both, kesRate, toKesMinor } from "./money";
 import { queryStatus } from "./payaza";
 
@@ -52,6 +53,7 @@ export async function confirmPayment(merchantReference: string, via: "webhook" |
 
     if (payment.kind === "deposit") {
       await tx.update(deals).set({ status: "deposit_paid" }).where(eq(deals.id, deal.id));
+      await lockDealDocuments(tx, deal.id, new Date());
       await recordEvent(tx, deal.id, "payaza", "deposit_paid", `Buyer paid deposit · ${amount}`, { ref, merchantReference, via });
     } else {
       const label = payment.kind === "final" ? "final payment" : "balance";

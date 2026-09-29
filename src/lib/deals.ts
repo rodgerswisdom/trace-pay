@@ -2,7 +2,7 @@ import "server-only";
 import { randomBytes } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 import { db, type Tx } from "@/db";
-import { claims, deals, events, payments, proofItems, readings, transitLogs, type Claim, type Deal, type DealEvent, type Payment } from "@/db/schema";
+import { claims, dealDocuments, deals, events, payments, proofItems, readings, transitLogs, type Claim, type Deal, type DealEvent, type Payment } from "@/db/schema";
 import { splitTranches } from "./money";
 
 type Actor = DealEvent["actor"];
@@ -38,11 +38,12 @@ export async function loadDeal(where: { id: string; exporterId: string } | { buy
     with: { exporter: true },
   });
   if (!deal) return null;
-  const [dealPayments, dealEvents, dealClaims, dealProof, dealReadings, [transitLog]] = await Promise.all([
+  const [dealPayments, dealEvents, dealClaims, dealProof, dealDocumentsList, dealReadings, [transitLog]] = await Promise.all([
     db.select().from(payments).where(eq(payments.dealId, deal.id)).orderBy(asc(payments.createdAt)),
     db.select().from(events).where(eq(events.dealId, deal.id)).orderBy(asc(events.n)),
     db.select().from(claims).where(eq(claims.dealId, deal.id)).orderBy(asc(claims.createdAt)),
     db.select().from(proofItems).where(eq(proofItems.dealId, deal.id)).orderBy(asc(proofItems.createdAt)),
+    db.select().from(dealDocuments).where(eq(dealDocuments.dealId, deal.id)).orderBy(asc(dealDocuments.uploadedAt)),
     db.select().from(readings).where(eq(readings.dealId, deal.id)),
     db.select().from(transitLogs).where(eq(transitLogs.dealId, deal.id)),
   ]);
@@ -52,6 +53,7 @@ export async function loadDeal(where: { id: string; exporterId: string } | { buy
     events: dealEvents,
     claims: dealClaims,
     proof: dealProof,
+    documents: dealDocumentsList,
     readings: dealReadings,
     transitLog: transitLog ?? null,
   };

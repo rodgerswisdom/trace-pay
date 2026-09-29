@@ -15,6 +15,20 @@
       "when": 1790591370025,
       "tag": "0001_integrity_triggers",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790602071185,
+      "tag": "0002_cynical_silver_samurai",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790688000000,
+      "tag": "0003_repair_deal_documents",
+      "breakpoints": true
     }
   ]
 }

@@ -31,7 +31,7 @@ export default async function BuyerDealPage({ params, searchParams }: PageProps<
   const { returned, phone: phoneError, claim: claimFlag, arrival: arrivalFlag, payment: paymentFlag } = await searchParams;
   const data = await loadDeal({ buyerToken: token });
   if (!data) notFound();
-  const { deal, payments, claims, proof, readings, transitLog } = data;
+  const { deal, payments, claims, proof, documents, readings, transitLog } = data;
   const exporterName = deal.exporter.businessName;
   const claim = claims.at(-1);
   const due = amountsDue(deal, claims);
@@ -189,6 +189,31 @@ export default async function BuyerDealPage({ params, searchParams }: PageProps<
             <QualityTerms deal={deal} s={s.deal} />
           </section>
 
+          <section>
+            <h2 className="mb-1 font-semibold">Documents from the exporter</h2>
+            <p className="mb-3 text-sm text-muted-foreground">These files were provided before payment and are part of the deal record.</p>
+            {documents.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No pre-payment documents have been added.</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {documents.map((document) => (
+                  <li key={document.id} className="flex items-center gap-3 rounded-xl border p-3">
+                    {document.contentType.startsWith("image/") ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- private, token-scoped document route
+                      <img src={`/b/${token}/documents/${document.id}`} alt="" className="size-14 shrink-0 rounded-md bg-muted object-cover" />
+                    ) : (
+                      <span className="flex size-14 shrink-0 items-center justify-center rounded-md bg-muted text-sm font-medium uppercase text-muted-foreground">PDF</span>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <a href={`/b/${token}/documents/${document.id}`} target="_blank" rel="noopener" className="truncate text-sm font-medium hover:underline">{document.fileName}</a>
+                      <p className="text-xs text-muted-foreground">{DOCUMENT_CATEGORY_LABELS[document.category]} · {(document.sizeBytes / 1024).toFixed(0)} KB</p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
           {deal.proofLockedAt && (
             <section>
               <h2 className="mb-3 font-semibold">{s.deal.readings}</h2>
@@ -266,6 +291,13 @@ export default async function BuyerDealPage({ params, searchParams }: PageProps<
 }
 
 const rank = (order: readonly string[], type: string) => (order.includes(type) ? order.indexOf(type) : order.length);
+const DOCUMENT_CATEGORY_LABELS = {
+  quality_certificate: "Quality certificate",
+  phytosanitary: "Phytosanitary certificate",
+  origin_traceability: "Origin and traceability",
+  inspection_report: "Inspection report",
+  product_photos: "Product photos",
+} as const;
 
 function ClaimSummary({ claim, currency }: { claim: Claim; currency: string }) {
   return (

@@ -15,6 +15,9 @@ export default async function NewDealPage() {
         ← {exporter.language === "sw" ? "Mikataba" : "Deals"}
       </Link>
       <h1 className="mb-5 text-2xl font-semibold md:mb-8 md:text-3xl">{s.newDeal.title}</h1>
+      <p className="-mt-3 mb-5 max-w-2xl text-sm text-muted-foreground md:text-base">
+        {s.newDeal.documentsNext}
+      </p>
       <NewDealForm s={s.newDeal} currencies={CURRENCIES} rates={rates} />
     </main>
   );

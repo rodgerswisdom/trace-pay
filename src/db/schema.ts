@@ -37,6 +37,7 @@ export const PROOF_TYPES = [
   "inspection_report",
   "temperature_log",
 ] as const;
+export const DEAL_DOCUMENT_TYPES = ["quality_certificate", "phytosanitary", "origin_traceability", "inspection_report", "product_photos"] as const;
 export const CLAIM_REASONS = ["underweight", "immature", "overripe_damaged", "other"] as const;
 
 const bytea = customType<{ data: Buffer; driverData: Buffer }>({ dataType: () => "bytea" });
@@ -259,8 +260,29 @@ export const paymentsRelations = relations(payments, ({ one }) => ({
 export const proofItemsRelations = relations(proofItems, ({ one }) => ({
   deal: one(deals, { fields: [proofItems.dealId], references: [deals.id] }),
 }));
+export const dealDocuments = pgTable(
+  "deal_documents",
+  {
+    id: id(),
+    dealId: text("deal_id")
+      .notNull()
+      .references(() => deals.id),
+    category: text("category", { enum: DEAL_DOCUMENT_TYPES }).notNull(),
+    fileKey: text("file_key").notNull().unique(),
+    fileName: text("file_name").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    sha256: text("sha256").notNull(),
+    uploadedAt: ts("uploaded_at").notNull(),
+    lockedAt: ts("locked_at"),
+  },
+  (t) => [index("deal_documents_deal_idx").on(t.dealId)],
+);
 export const claimsRelations = relations(claims, ({ one }) => ({
   deal: one(deals, { fields: [claims.dealId], references: [deals.id] }),
+}));
+export const dealDocumentsRelations = relations(dealDocuments, ({ one }) => ({
+  deal: one(deals, { fields: [dealDocuments.dealId], references: [deals.id] }),
 }));
 export const eventsRelations = relations(events, ({ one }) => ({
   deal: one(deals, { fields: [events.dealId], references: [deals.id] }),
@@ -270,6 +292,7 @@ export type Exporter = typeof exporters.$inferSelect;
 export type Deal = typeof deals.$inferSelect;
 export type Payment = typeof payments.$inferSelect;
 export type ProofItem = typeof proofItems.$inferSelect;
+export type DealDocument = typeof dealDocuments.$inferSelect;
 export type Claim = typeof claims.$inferSelect;
 export type DealEvent = typeof events.$inferSelect;
 export type DealStatus = Deal["status"];

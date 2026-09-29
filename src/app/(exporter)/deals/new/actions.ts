@@ -7,6 +7,7 @@ import { requireExporter } from "@/auth";
 import { db } from "@/db";
 import { deals } from "@/db/schema";
 import { newBuyerToken, recordEvent } from "@/lib/deals";
+import { addDealDocument } from "@/lib/deal-documents";
 import { t } from "@/lib/i18n";
 import { CURRENCIES, fmt, splitTranches } from "@/lib/money";
 import { normalizePhone } from "@/lib/phone";
@@ -16,7 +17,11 @@ export type NewDealState = { errors?: Partial<Record<string, string>>; values?: 
 export async function createDeal(_prev: NewDealState, formData: FormData): Promise<NewDealState> {
   const exporter = await requireExporter();
   const s = t(exporter.language).newDeal;
-  const values = Object.fromEntries([...formData].map(([k, v]) => [k, String(v)]));
+  const values = Object.fromEntries(
+    [...formData].filter(([, value]) => typeof value === "string").map(([key, value]) => [key, String(value)]),
+  ) as Record<string, string>;
+  const documentCategories = formData.getAll("documentCategory").map(String);
+  const documentFiles = formData.getAll("dealDocument").filter((value): value is File => value instanceof File && value.size > 0);
 
   const schema = z.object({
     buyerCompany: z.string().trim().min(1, s.errCompany),
@@ -44,6 +49,9 @@ export async function createDeal(_prev: NewDealState, formData: FormData): Promi
     for (const issue of parsed.error.issues) errors[String(issue.path[0])] ??= issue.message;
     return { errors, values };
   }
+
+  const requiredDocuments = ["quality_certificate", "origin_traceability"];
+  if (!requiredDocuments.every((category) => documentCategories.includes(category))) return { errors: { documents: s.documentsRequired }, values };
 
   const v = parsed.data;
   const pricePerKgMinor = Math.round(v.pricePerKg * 100);
@@ -95,5 +103,12 @@ export async function createDeal(_prev: NewDealState, formData: FormData): Promi
     return d;
   });
 
-  redirect(`/deals/${deal.id}/share`);
+  for (const [index, file] of documentFiles.entries()) {
+    const documentForm = new FormData();
+    documentForm.set("category", documentCategories[index] ?? "");
+    documentForm.set("file", file, file.name);
+    await addDealDocument(deal.id, documentForm);
+  }
+
+  redirect(`/deals/${deal.id}/documents`);
 }

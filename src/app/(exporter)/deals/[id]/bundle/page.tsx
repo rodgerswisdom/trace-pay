@@ -20,13 +20,20 @@ const utc = (d: Date) => `${d.toISOString().slice(0, 16).replace("T", " ")} UTC`
 const both = (d: Date) => `${utc(d)} (${fmtTimeEAT(d)} EAT)`;
 const ACTOR = { exporter: "Exporter", buyer: "Buyer", payaza: "Payaza", system: "TRACE Pay" } as const;
 const CLAIM_OUTCOME = { open: "Open", accepted: "Accepted in full", countered: "Settled at a different amount", rejected: "Rejected with proof" } as const;
+const DOCUMENT_CATEGORY_LABELS = {
+  quality_certificate: "Quality certificate",
+  phytosanitary: "Phytosanitary certificate",
+  origin_traceability: "Origin and traceability",
+  inspection_report: "Inspection report",
+  product_photos: "Product photos",
+} as const;
 
 export default async function EvidenceBundlePage({ params }: PageProps<"/deals/[id]/bundle">) {
   const { id } = await params;
   const exporter = await requireExporter();
   const data = await loadDeal({ id, exporterId: exporter.id });
   if (!data) notFound();
-  const { deal, payments, events, claims, proof, readings, transitLog } = data;
+  const { deal, payments, events, claims, proof, documents, readings, transitLog } = data;
   const c = deal.currency;
   const due = amountsDue(deal, claims);
   const recorded = proof
@@ -122,6 +129,29 @@ export default async function EvidenceBundlePage({ params }: PageProps<"/deals/[
               })}
             </ol>
           </>
+        )}
+      </Section>
+
+      <Section title="2. Documents provided before payment">
+        {documents.length === 0 ? (
+          <p className="text-muted-foreground">No pre-payment documents attached.</p>
+        ) : (
+          <ol className="flex flex-col gap-3">
+            {documents.map((document, i) => (
+              <li key={document.id} className="flex gap-3 break-inside-avoid rounded-lg border p-3">
+                {document.contentType.startsWith("image/") && (
+                  // eslint-disable-next-line @next/next/no-img-element -- private, access-checked file route
+                  <img src={`/deals/${id}/documents/${document.id}`} alt="" className="size-20 shrink-0 rounded border object-cover print:size-16" />
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="font-semibold">{i + 1}. {DOCUMENT_CATEGORY_LABELS[document.category]}</p>
+                  <p>File: {document.fileName} · {document.contentType} · {document.sizeBytes.toLocaleString("en-US")} bytes</p>
+                  <p>Recorded: {both(document.uploadedAt)}</p>
+                  <p className="font-mono text-xs break-all">SHA-256 {document.sha256}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
         )}
       </Section>
 
