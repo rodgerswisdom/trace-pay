@@ -84,9 +84,16 @@ export default async function DealPage({ params }: PageProps<"/deals/[id]">) {
           <section className="flex flex-col gap-4 rounded-xl border bg-muted/50 p-4 md:flex-row md:items-center md:justify-between md:p-5">
             <p className="font-medium md:text-lg">{next.text}</p>
             {next.href && (
-              <Link href={next.href} className={cn(buttonVariants(), primaryButton, "hidden md:inline-flex md:w-56 md:shrink-0")}>
-                {next.button}
-              </Link>
+              <div className="hidden md:flex md:shrink-0 md:gap-2">
+                {"secondary" in next && next.secondary && (
+                  <Link href={next.secondary.href} className={cn(buttonVariants({ variant: "outline" }), primaryButton, "md:w-44")}>
+                    {next.secondary.button}
+                  </Link>
+                )}
+                <Link href={next.href} className={cn(buttonVariants(), primaryButton, "md:w-56")}>
+                  {next.button}
+                </Link>
+              </div>
             )}
           </section>
 
@@ -225,6 +232,11 @@ export default async function DealPage({ params }: PageProps<"/deals/[id]">) {
           <Link href={next.href} className={cn(buttonVariants(), primaryButton)}>
             {next.button}
           </Link>
+          {"secondary" in next && next.secondary && (
+            <Link href={next.secondary.href} className={cn(buttonVariants({ variant: "outline" }), primaryButton)}>
+              {next.secondary.button}
+            </Link>
+          )}
         </BottomBar>
       )}
     </main>
@@ -234,7 +246,7 @@ export default async function DealPage({ params }: PageProps<"/deals/[id]">) {
 function nextStep(status: string, id: string, s: ReturnType<typeof t>) {
   switch (status) {
     case "awaiting_deposit":
-      return { text: s.deal.waitingDeposit, button: s.deal.shareLink, href: `/deals/${id}/share` };
+      return { text: s.deal.waitingDeposit, button: s.deal.shareLink, href: `/deals/${id}/share`, secondary: { button: s.deal.addProofNow, href: `/deals/${id}/proof` } };
     case "deposit_paid":
       return { text: s.deal.depositReceived, button: s.deal.addProof, href: `/deals/${id}/proof` };
     case "claim_open":

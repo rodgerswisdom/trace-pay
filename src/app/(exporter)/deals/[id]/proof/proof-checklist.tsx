@@ -43,12 +43,15 @@ export function ProofChecklist({
   dealId,
   s,
   balance,
+  depositPaid,
   initial,
   showIncomplete,
 }: {
   dealId: string;
   s: S;
   balance: string;
+  /** Before the deposit, items can be added and are kept, but the balance can't be requested yet. */
+  depositPaid: boolean;
   initial: SavedItem[];
   showIncomplete: boolean;
 }) {
@@ -342,7 +345,8 @@ export function ProofChecklist({
             {s.stillNeeded}: {missing.map((m) => s.items[m].label).join(", ")}
           </p>
         )}
-        <Button type="button" className={primaryButton} disabled={!ready} onClick={() => setConfirming(true)}>
+        {!depositPaid && <p className="text-sm text-muted-foreground">{s.savedBeforeDeposit}</p>}
+        <Button type="button" className={primaryButton} disabled={!ready || !depositPaid} onClick={() => setConfirming(true)}>
           {s.submit}
         </Button>
       </BottomBar>

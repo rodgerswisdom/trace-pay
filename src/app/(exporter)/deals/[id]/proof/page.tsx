@@ -8,6 +8,7 @@ import { db } from "@/db";
 import { proofItems } from "@/db/schema";
 import { asc, eq } from "drizzle-orm";
 import { ProofChecklist } from "./proof-checklist";
+import { PROOF_OPEN_STATUSES } from "@/lib/proof-server";
 
 export default async function AddProofPage({ params, searchParams }: PageProps<"/deals/[id]/proof">) {
   const { id } = await params;
@@ -16,7 +17,7 @@ export default async function AddProofPage({ params, searchParams }: PageProps<"
   const data = await loadDeal({ id, exporterId: exporter.id });
   if (!data) notFound();
   const { deal } = data;
-  if (deal.proofLockedAt || deal.status !== "deposit_paid") redirect(`/deals/${id}`);
+  if (deal.proofLockedAt || !(PROOF_OPEN_STATUSES as readonly string[]).includes(deal.status)) redirect(`/deals/${id}`);
 
   const s = t(exporter.language);
   const items = await db.select().from(proofItems).where(eq(proofItems.dealId, id)).orderBy(asc(proofItems.createdAt));
@@ -35,6 +36,7 @@ export default async function AddProofPage({ params, searchParams }: PageProps<"
         dealId={id}
         s={s.proof}
         balance={balance}
+        depositPaid={deal.status === "deposit_paid"}
         showIncomplete={error === "incomplete"}
         initial={items
           .filter((i) => i.sha256 && i.receivedAt)

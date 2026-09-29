@@ -44,6 +44,7 @@ type TabKey = (typeof TABS)[number]["key"] | "account";
 function activeTab(pathname: string): TabKey | null {
   for (const t of TABS) if (pathname === t.href || pathname.startsWith(`${t.href}/`)) return t.key;
   if (pathname.startsWith("/account")) return "account";
+  if (pathname.startsWith("/withdraw")) return "home";
   return null;
 }
 

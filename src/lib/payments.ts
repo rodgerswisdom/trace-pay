@@ -56,8 +56,6 @@ export async function confirmPayment(merchantReference: string, via: "webhook" |
     } else {
       const label = payment.kind === "final" ? "final payment" : "balance";
       await recordEvent(tx, deal.id, "payaza", `${payment.kind}_paid`, `Buyer paid ${label} · ${amount}`, { ref, merchantReference, via });
-      // Test-mode payments are not settled by Payaza, so we record initiation only.
-      await recordEvent(tx, deal.id, "payaza", "settlement_initiated", `Settlement initiated to exporter · KES ${(kesMinor / 100).toLocaleString("en-US", { maximumFractionDigits: 0 })} (estimate)`, { ref });
 
       // What's next: the final tranche on arrival, or paid in full.
       const dealClaims = await tx.select().from(claims).where(eq(claims.dealId, deal.id));

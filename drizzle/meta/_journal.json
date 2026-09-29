@@ -22,6 +22,13 @@
       "when": 1790603400638,
       "tag": "0002_adjustment_flow",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1790700000000,
+      "tag": "0003_getting_paid",
+      "breakpoints": true
     }
   ]
 }

@@ -16,14 +16,17 @@ export class ProofError extends Error {
   }
 }
 
-/** The signed-in exporter's deal, open for proof (deposit paid, not locked). */
+/** Proof can be gathered from the moment the deal exists until it is attached (locked). It stays private until then. */
+export const PROOF_OPEN_STATUSES = ["awaiting_deposit", "deposit_paid"] as const;
+
+/** The signed-in exporter's deal, open for proof (not cancelled, not locked). */
 export async function openDealForProof(dealId: string) {
   const session = await auth();
   if (!session?.user?.id) throw new ProofError("Sign in again", 401);
   const deal = await db.query.deals.findFirst({ where: and(eq(deals.id, dealId), eq(deals.exporterId, session.user.id)) });
   if (!deal) throw new ProofError("Deal not found", 404);
   if (deal.proofLockedAt) throw new ProofError("Proof is already attached and can't be changed", 409);
-  if (deal.status !== "deposit_paid") throw new ProofError("Proof can be added once the deposit is paid", 409);
+  if (!(PROOF_OPEN_STATUSES as readonly string[]).includes(deal.status)) throw new ProofError("Proof can't be added to this deal", 409);
   return deal;
 }
 

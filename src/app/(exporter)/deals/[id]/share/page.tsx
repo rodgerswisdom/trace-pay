@@ -16,7 +16,9 @@ export default async function SharePage({ params }: PageProps<"/deals/[id]/share
   const exporter = await requireExporter();
   const deal = await db.query.deals.findFirst({ where: and(eq(deals.id, id), eq(deals.exporterId, exporter.id)) });
   if (!deal) notFound();
-  const s = t(exporter.language).share;
+  const all = t(exporter.language);
+  const s = all.share;
+  const canAddProof = !deal.proofLockedAt && (deal.status === "awaiting_deposit" || deal.status === "deposit_paid");
 
   return (
     <main className="flex w-full max-w-4xl flex-1 flex-col gap-5 md:gap-8">
@@ -35,6 +37,11 @@ export default async function SharePage({ params }: PageProps<"/deals/[id]/share
         <Link href={`/deals/${deal.id}`} className={cn(buttonVariants({ variant: "secondary" }), primaryButton)}>
           {s.goToDeal}
         </Link>
+        {canAddProof && (
+          <Link href={`/deals/${deal.id}/proof`} className={cn(buttonVariants({ variant: "outline" }), primaryButton)}>
+            {all.deal.addProofNow}
+          </Link>
+        )}
       </BottomBar>
     </main>
   );

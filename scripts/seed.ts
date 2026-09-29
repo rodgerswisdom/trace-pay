@@ -3,7 +3,7 @@ import { createHash, randomBytes } from "node:crypto";
 import bcrypt from "bcryptjs";
 import { eq } from "drizzle-orm";
 import { db, type Tx } from "../src/db";
-import { claims, deals, events, exporters, files, payments, proofItems, readings, transitLogs, type EvidenceItem } from "../src/db/schema";
+import { claims, deals, events, exporters, files, payments, payoutAccounts, proofItems, readings, transitLogs, withdrawals, type EvidenceItem } from "../src/db/schema";
 import { parseTrackerCsv, sampleTrackerCsv, summarize } from "../src/lib/transit";
 import { appUrl } from "../src/lib/urls";
 
@@ -49,6 +49,7 @@ async function main() {
   const existing = await db.query.deals.findMany({ where: eq(deals.exporterId, exporter.id) });
   if (existing.length > 0) {
     console.log(`Already has ${existing.length} deal(s); skipping sample deals. Run \`pnpm db:reset\` to start fresh.`);
+    await seedGettingPaid(exporter.id);
     return;
   }
 
@@ -194,21 +195,18 @@ async function main() {
       fx: number,
       ref: string,
       paidAt: Date,
-      settledAt?: Date,
     ) =>
       tx.insert(payments).values({
         dealId,
         kind,
         amountMinor,
         currency,
-        status: settledAt ? "settled" : "paid",
+        status: "paid",
         merchantReference: `TP-${ref.split("-")[0]}-${kind === "deposit" ? "D" : "B"}-sample`,
         payazaReference: `SAMPLE-PZ-${ref}`,
         fxRate: fx,
         kesAmountMinor: Math.round(amountMinor * fx),
         paidAt,
-        settlementReference: settledAt ? `SAMPLE-STL-${ref}` : null,
-        settledAt: settledAt ?? null,
         createdAt: paidAt,
       });
     const ev = (dealId: string, actor: "exporter" | "buyer" | "payaza" | "system", type: string, summary: string, createdAt: Date) =>
@@ -263,7 +261,7 @@ async function main() {
       ev(d4.id, "system", "adjustment_check", "Agreed check: Measurements disagree: the exporter reviews the evidence", at(1, 11, 25)),
     ]);
 
-    // 5. Same buyer, earlier deal: paid in full and settled.
+    // 5. Same buyer, earlier deal: paid in full, and the exporter has withdrawn it.
     const [d5] = await tx
       .insert(deals)
       .values({
@@ -280,22 +278,21 @@ async function main() {
         depositPct: 30,
         destination: "Dubai",
         dispatchDate: dateOnly(-18),
-        status: "settled",
+        status: "balance_paid",
         buyerToken: token(),
         createdAt: at(24, 10, 0),
       })
       .returning();
-    await pay(d5.id, "deposit", 61_500, "USD", fxUsd, "0924-DEP", at(22, 9, 41), at(21, 10, 0));
+    await pay(d5.id, "deposit", 61_500, "USD", fxUsd, "0924-DEP", at(22, 9, 41));
     await attachSampleProof(tx, d5.id, "TP-0924", at(18, 17, 5), { dryMatter: "25.1" });
     await attachSampleTransit(tx, d5.id, "TP-0924", at(18, 16, 0));
     await recordArrival(tx, d5.id, at(16, 8, 40), { dm: 25.0, pulp: 5.9, sample: 10 });
-    await pay(d5.id, "balance", 143_500, "USD", fxUsd, "0924-BAL", at(15, 13, 12), at(14, 10, 0));
+    await pay(d5.id, "balance", 143_500, "USD", fxUsd, "0924-BAL", at(15, 13, 12));
     await tx.insert(events).values([
       ev(d5.id, "exporter", "deal_created", "Deal created · USD 2,050 · deposit USD 615 (30%), balance USD 1,435 after proof", at(24, 10, 0)),
       ev(d5.id, "payaza", "deposit_paid", `Buyer paid deposit · USD 615 · KES ${Math.round(615 * fxUsd).toLocaleString("en-US")} (sample data)`, at(22, 9, 41)),
       ev(d5.id, "exporter", "proof_attached", "Proof of dispatch attached · balance of USD 1,435 requested", at(18, 17, 5)),
       ev(d5.id, "payaza", "balance_paid", `Buyer paid balance · USD 1,435 · KES ${Math.round(1435 * fxUsd).toLocaleString("en-US")} (sample data)`, at(15, 13, 12)),
-      ev(d5.id, "payaza", "settled", "Settled to exporter's KES account (sample data)", at(14, 10, 0)),
     ]);
 
     // 6. Repeat buyer, claim resolved with a counter-offer, balance paid.
@@ -349,7 +346,6 @@ async function main() {
       ev(d6.id, "system", "adjustment_check", "Agreed check: Meets the agreed term: no adjustment under the agreed check", at(6, 10, 5)),
       ev(d6.id, "exporter", "adjustment_countered", "Exporter confirmed EUR 200 off instead of EUR 360 · new balance EUR 2,320", at(5, 18, 40)),
       ev(d6.id, "payaza", "balance_paid", `Buyer paid balance · EUR 2,320 · KES ${Math.round(2320 * fxEur).toLocaleString("en-US")} (sample data)`, at(3, 9, 55)),
-      ev(d6.id, "payaza", "settlement_initiated", "Settlement initiated to exporter (sample data)", at(3, 9, 55)),
     ]);
 
     console.log("Sample deals:");
@@ -357,6 +353,62 @@ async function main() {
       console.log(`  TP-${String(d.seq).padStart(4, "0")}  ${d.status.padEnd(16)} buyer link: ${baseUrl}/b/${d.buyerToken}`);
     }
   });
+  await seedGettingPaid(exporter.id);
+}
+
+/** Where the demo exporter gets paid, added once (also to an existing database). */
+async function seedGettingPaid(exporterId: string) {
+  if (await db.query.payoutAccounts.findFirst({ where: eq(payoutAccounts.exporterId, exporterId) })) return;
+  const exporter = { id: exporterId };
+  const fxUsd = Number(process.env.FX_USD_KES ?? 129.2);
+  // Where the exporter gets paid: a bank account in use for weeks, and an M-Pesa number added
+  // two hours ago, still on its 24-hour hold. Sample numbers.
+  const [equity] = await db
+    .insert(payoutAccounts)
+    .values({
+      exporterId: exporter.id,
+      type: "bank",
+      provider: "Equity Bank",
+      bankCode: "68",
+      accountNumber: "0000000004821",
+      last4: "4821",
+      accountName: "Kandara Hass Growers Co-op",
+      isDefault: true,
+      activeAt: at(29, 9, 0),
+      createdAt: at(30, 9, 0),
+    })
+    .returning();
+  const heldSince = new Date(Date.now() - 2 * 3_600_000);
+  await db.insert(payoutAccounts).values({
+    exporterId: exporter.id,
+    type: "mpesa_phone",
+    provider: "M-Pesa",
+    accountNumber: "254712000678",
+    last4: "0678",
+    accountName: "Wanjiru Kamau",
+    activeAt: new Date(heldSince.getTime() + 24 * 3_600_000),
+    createdAt: heldSince,
+  });
+  // TP-0924's money, withdrawn after the balance came in (sample: no money moved).
+  const fee = 50_00;
+  await db.insert(withdrawals).values({
+    exporterId: exporter.id,
+    payoutAccountId: equity.id,
+    amountMinor: 205_000,
+    currency: "USD",
+    fxRate: fxUsd,
+    feeMinor: fee,
+    receiveMinor: Math.floor((205_000 * fxUsd) / 100) * 100 - fee,
+    status: "received",
+    reference: "SAMPLE-W-0924",
+    payazaReference: "SAMPLE-PZ-W-0924",
+    practice: true,
+    createdAt: at(14, 10, 0),
+    sentAt: at(14, 10, 0),
+    receivedAt: at(14, 11, 20),
+  });
+
+  console.log("Sample payout accounts added.");
 }
 
 // ---- Sample proof files -------------------------------------------------------------------

@@ -61,6 +61,8 @@ export const exporters = pgTable("exporters", {
   settlementBank: text("settlement_bank"),
   settlementAccount: text("settlement_account"),
   language: text("language", { enum: ["en", "sw"] }).notNull().default("en"),
+  /** Set when the exporter freezes withdrawals (e.g. after an account change they did not make). */
+  withdrawalsFrozenAt: ts("withdrawals_frozen_at"),
   createdAt: createdAt(),
 });
 
@@ -253,6 +255,94 @@ export const files = pgTable("files", {
   createdAt: createdAt(),
 });
 
+// ---- Getting paid ---------------------------------------------------------------------------
+// Money buyers pay is held in TRACE Pay's Payaza account. The exporter's balance is what their buyers
+// have paid, minus what they have withdrawn. They withdraw when they choose, to an account they added.
+
+export const PAYOUT_ACCOUNT_TYPES = ["bank", "mpesa_phone", "mpesa_paybill", "mpesa_till", "usd_bank"] as const;
+export type PayoutAccountType = (typeof PAYOUT_ACCOUNT_TYPES)[number];
+
+export const payoutAccounts = pgTable(
+  "payout_accounts",
+  {
+    id: id(),
+    exporterId: text("exporter_id")
+      .notNull()
+      .references(() => exporters.id),
+    type: text("type", { enum: PAYOUT_ACCOUNT_TYPES }).notNull(),
+    /** Bank name, or "M-Pesa". */
+    provider: text("provider").notNull(),
+    bankCode: text("bank_code"),
+    /** Full number, used only to send money. Never sent to the browser; screens show last4. */
+    accountNumber: text("account_number").notNull(),
+    last4: text("last4").notNull(),
+    accountName: text("account_name").notNull(),
+    currency: text("currency").notNull().default("KES"),
+    isDefault: boolean("is_default").notNull().default(false),
+    /** A new account can receive money from this time (24 hours after it was added). */
+    activeAt: ts("active_at").notNull(),
+    removedAt: ts("removed_at"),
+    createdAt: createdAt(),
+  },
+  (t) => [index("payout_accounts_exporter_idx").on(t.exporterId)],
+);
+
+export const WITHDRAWAL_STATUSES = ["initiated", "on_its_way", "received", "failed"] as const;
+export type WithdrawalStatus = (typeof WITHDRAWAL_STATUSES)[number];
+
+export const withdrawals = pgTable(
+  "withdrawals",
+  {
+    id: id(),
+    exporterId: text("exporter_id")
+      .notNull()
+      .references(() => exporters.id),
+    payoutAccountId: text("payout_account_id")
+      .notNull()
+      .references(() => payoutAccounts.id),
+    /** Taken from the balance in this currency. */
+    amountMinor: money("amount_minor").notNull(),
+    currency: text("currency").notNull(),
+    fxRate: doublePrecision("fx_rate").notNull(),
+    feeMinor: money("fee_minor").notNull(), // KES
+    receiveMinor: money("receive_minor").notNull(), // KES
+    status: text("status", { enum: WITHDRAWAL_STATUSES }).notNull().default("initiated"),
+    /** Ours, sent to Payaza as transaction_reference. */
+    reference: text("reference").notNull().unique(),
+    payazaReference: text("payaza_reference"),
+    failureReason: text("failure_reason"),
+    /** A practice withdrawal: nothing is sent to Payaza. */
+    practice: boolean("practice").notNull().default(false),
+    createdAt: createdAt(),
+    sentAt: ts("sent_at"),
+    receivedAt: ts("received_at"),
+    failedAt: ts("failed_at"),
+  },
+  (t) => [index("withdrawals_exporter_idx").on(t.exporterId)],
+);
+
+/** One-time codes for account changes and withdrawals. The action is stored here, so it can't change after the code is sent. */
+export const confirmations = pgTable("confirmations", {
+  id: id(),
+  exporterId: text("exporter_id")
+    .notNull()
+    .references(() => exporters.id),
+  purpose: text("purpose", { enum: ["add_account", "remove_account", "default_account", "unfreeze", "withdraw"] }).notNull(),
+  codeHash: text("code_hash").notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  expiresAt: ts("expires_at").notNull(),
+  usedAt: ts("used_at"),
+  createdAt: createdAt(),
+});
+
+export const payoutAccountsRelations = relations(payoutAccounts, ({ one }) => ({
+  exporter: one(exporters, { fields: [payoutAccounts.exporterId], references: [exporters.id] }),
+}));
+export const withdrawalsRelations = relations(withdrawals, ({ one }) => ({
+  account: one(payoutAccounts, { fields: [withdrawals.payoutAccountId], references: [payoutAccounts.id] }),
+}));
+
 export const dealsRelations = relations(deals, ({ one, many }) => ({
   exporter: one(exporters, { fields: [deals.exporterId], references: [exporters.id] }),
   payments: many(payments),
@@ -287,3 +377,5 @@ export type DealEvent = typeof events.$inferSelect;
 export type DealStatus = Deal["status"];
 export type Reading = typeof readings.$inferSelect;
 export type TransitLog = typeof transitLogs.$inferSelect;
+export type PayoutAccount = typeof payoutAccounts.$inferSelect;
+export type Withdrawal = typeof withdrawals.$inferSelect;

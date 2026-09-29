@@ -16,7 +16,7 @@ export const metadata: Metadata = {
 const STEPS = [
   { icon: HandshakeIcon, title: "Agree", body: "Price, deposit and quality terms, accepted when the buyer pays." },
   { icon: ClipboardCheckIcon, title: "Prove", body: "Dry matter, inspection and loading, recorded before the fruit leaves." },
-  { icon: WalletIcon, title: "Get paid", body: "Balance settled to you in KES." },
+  { icon: WalletIcon, title: "Get paid", body: "Withdraw to your bank or M-Pesa in KES, whenever you want." },
 ];
 
 export default function LandingPage() {
