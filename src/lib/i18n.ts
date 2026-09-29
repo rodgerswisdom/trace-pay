@@ -286,6 +286,9 @@ const en = {
     failed: "Upload failed",
     remove: "Remove",
     empty: "No buyer-visible documents added yet.",
+    manage: "Manage documents",
+    locked: "Locked",
+    editable: "Editable before payment",
     continue: "Continue to buyer link",
   },
   share: {
@@ -651,6 +654,9 @@ const sw: Dict = {
     failed: "Upakiaji umeshindwa",
     remove: "Ondoa",
     empty: "Hakuna nyaraka za mnunuzi bado.",
+    manage: "Dhibiti nyaraka",
+    locked: "Imefungwa",
+    editable: "Inaweza kubadilishwa kabla ya malipo",
     continue: "Endelea kwenye kiungo cha mnunuzi",
   },
   share: {

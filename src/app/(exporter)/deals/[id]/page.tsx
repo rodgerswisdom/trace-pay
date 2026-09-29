@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { CameraIcon, FileDownIcon } from "lucide-react";
+import { CameraIcon, FileDownIcon, FileTextIcon } from "lucide-react";
 import { notFound, redirect } from "next/navigation";
 import { and, eq } from "drizzle-orm";
 import { requireExporter } from "@/auth";
@@ -26,7 +26,7 @@ export default async function DealPage({ params }: PageProps<"/deals/[id]">) {
   const exporter = await requireExporter();
   const data = await loadDeal({ id, exporterId: exporter.id });
   if (!data) notFound();
-  const { deal, payments, events, claims, proof, readings, transitLog } = data;
+  const { deal, payments, events, claims, proof, documents, readings, transitLog } = data;
   const s = t(exporter.language);
   const rate = kesRate(deal.currency);
 
@@ -131,6 +131,42 @@ export default async function DealPage({ params }: PageProps<"/deals/[id]">) {
           <section>
             <h2 className={sectionTitle}>{s.deal.qualityTerms}</h2>
             <QualityTerms deal={deal} s={s.deal} />
+          </section>
+
+          <section>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className={sectionTitle}>{s.documents.title}</h2>
+              {deal.status === "awaiting_deposit" && (
+                <Link href={`/deals/${deal.id}/documents`} className="text-sm text-primary underline-offset-4 hover:underline">
+                  {s.documents.manage}
+                </Link>
+              )}
+            </div>
+            <p className="mb-3 text-sm text-muted-foreground">{s.documents.intro}</p>
+            {documents.length === 0 ? (
+              <p className="rounded-xl border p-4 text-sm text-muted-foreground">{s.documents.empty}</p>
+            ) : (
+              <ul className="flex flex-col gap-2">
+                {documents.map((document) => (
+                  <li key={document.id} className="flex items-center gap-3 rounded-xl border p-3">
+                    {document.contentType.startsWith("image/") ? (
+                      // eslint-disable-next-line @next/next/no-img-element -- private, session-checked document route
+                      <img src={`/deals/${deal.id}/documents/${document.id}`} alt="" className="size-14 shrink-0 rounded-md bg-muted object-cover" />
+                    ) : (
+                      <span className="flex size-14 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground"><FileTextIcon className="size-6" /></span>
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <a href={`/deals/${deal.id}/documents/${document.id}`} target="_blank" rel="noopener" className="truncate text-sm font-medium hover:underline">
+                        {document.fileName}
+                      </a>
+                      <p className="text-xs text-muted-foreground">
+                        {s.documents.categories[document.category]} · {(document.sizeBytes / 1024).toFixed(0)} KB · {document.lockedAt ? s.documents.locked : s.documents.editable}
+                      </p>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            )}
           </section>
 
           {/* Quality claim, when there is one */}
